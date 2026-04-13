@@ -46,7 +46,7 @@ function generateOTP() {
 
 /**
  * Open WhatsApp with a pre-filled order message.
- * @param {string} whatsappNumber  e.g. "919876543210"
+ * @param {string} whatsappNumber  e.g. "919876543210" (digits only, no + or spaces)
  * @param {string} productName
  * @param {number} quantity
  * @param {number|string} totalPrice
@@ -54,6 +54,10 @@ function generateOTP() {
  * @param {string} otp
  */
 function sendWhatsApp(whatsappNumber, productName, quantity, totalPrice, customerName, otp) {
+  if (!whatsappNumber || !/^[0-9]{7,15}$/.test(whatsappNumber)) {
+    alert("WhatsApp number is not configured for this shop. Please contact the shopkeeper.");
+    return;
+  }
   const message =
     `Order:\n` +
     `Product: ${productName}\n` +

@@ -465,7 +465,9 @@
 
         // Populate shop info in UI
         const shopName = currentShop.shopName;
-        const publicUrl = `${window.location.origin}/index.html?shop=${encodeURIComponent(shopName)}`;
+        const baseUrl  = window.location.origin +
+          window.location.pathname.replace(/admin\.html$/, "index.html");
+        const publicUrl = baseUrl + "?shop=" + encodeURIComponent(shopName);
 
         document.getElementById("header-shop-name").textContent = shopName;
         document.getElementById("banner-shop-name").textContent = shopName;

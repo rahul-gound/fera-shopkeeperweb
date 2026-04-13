@@ -147,7 +147,7 @@
           pattern="[a-z0-9\-]+"
           oninput="updateSlugPreview()"
         />
-        <p class="slug-hint">Your shop URL: <span id="slug-preview">yourshop</span>.fera-search.tech</p>
+        <p class="slug-hint">Your shop URL: <span id="slug-preview">yourshop</span><span id="slug-domain"></span></p>
         <p class="field-error" id="err-shop-name">Only lowercase letters, numbers, and hyphens allowed.</p>
       </div>
 
@@ -191,6 +191,9 @@
       const raw = document.getElementById("shop-name").value;
       const slug = raw.toLowerCase().replace(/[^a-z0-9-]/g, "");
       document.getElementById("slug-preview").textContent = slug || "yourshop";
+      // Show the current host so the preview reflects the actual deployment domain
+      const host = window.location.host || "yourapp.web.app";
+      document.getElementById("slug-domain").textContent = "." + host + "/index.html?shop=" + (slug || "yourshop");
     }
 
     function showFieldError(id, show) {

@@ -102,6 +102,7 @@ Some queries require composite indexes. Go to **Firestore → Indexes** and crea
 
 | Collection | Fields | Order |
 |---|---|---|
+| `shops` | `shopName` ASC | Single-field (if needed for large datasets) |
 | `products` | `shopId` ASC, `createdAt` DESC | Composite |
 | `orders` | `shopId` ASC, `createdAt` DESC | Composite |
 | `expenses` | `shopId` ASC, `createdAt` DESC | Composite |
