@@ -7,6 +7,11 @@
 // ── 1. APPWRITE CONFIGURATION ────────────────────────────────
 // Replace these values with your own Appwrite project settings.
 // See README.md for step-by-step setup instructions.
+//
+// NOTE: These IDs are visible to anyone who views the page source.
+// Security relies entirely on the collection-level permissions configured
+// in the Appwrite console. Make sure all collections have the correct
+// read/write permissions set (see README.md → Step 4).
 const APPWRITE_ENDPOINT   = "https://cloud.appwrite.io/v1"; // Appwrite Cloud endpoint
 const APPWRITE_PROJECT_ID = "YOUR_PROJECT_ID";              // Project ID from Appwrite console
 const DATABASE_ID         = "YOUR_DATABASE_ID";             // Database ID from Appwrite console
@@ -327,6 +332,8 @@ async function addExpense(shopId, amount, date) {
 /**
  * Calculate total revenue for a shop (sum of all order totalPrices).
  * Appwrite's max listDocuments limit is 5000 per request.
+ * WARNING: Shops with more than 5000 orders will receive an incomplete total.
+ * For high-volume shops, replace with a paginated sum or a server-side function.
  * @param {string} shopId
  * @returns {Promise<number>}
  */
@@ -340,6 +347,8 @@ async function getTotalRevenue(shopId) {
 
 /**
  * Calculate total expenses for a shop.
+ * WARNING: Shops with more than 5000 expense records will receive an incomplete total.
+ * For high-volume shops, replace with a paginated sum or a server-side function.
  * @param {string} shopId
  * @returns {Promise<number>}
  */

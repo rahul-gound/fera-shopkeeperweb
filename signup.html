@@ -191,7 +191,7 @@
       const slug = raw.toLowerCase().replace(/[^a-z0-9-]/g, "");
       document.getElementById("slug-preview").textContent = slug || "yourshop";
       // Show the current host so the preview reflects the actual deployment domain
-      const host = window.location.host || "yourapp.web.app";
+      const host = window.location.host || "localhost:8000";
       document.getElementById("slug-domain").textContent = "." + host + "/index.html?shop=" + (slug || "yourshop");
     }
 

@@ -242,15 +242,16 @@ Or deploy to **Appwrite Static Hosting**, **Netlify**, **Vercel**, or any static
 If you prefer to run your own Appwrite instance instead of using Appwrite Cloud:
 
 ```bash
-# Install Appwrite using Docker
-docker run -it --rm \
-  --volume /var/run/docker.sock:/var/run/docker.sock \
-  --volume "$(pwd)"/appwrite:/usr/src/code/appwrite:rw \
-  --entrypoint="install" \
-  appwrite/appwrite:latest
+# Install the Appwrite CLI
+npm install -g appwrite-cli
+
+# Initialize and start Appwrite (Docker required)
+appwrite init
 ```
 
 Then update `APPWRITE_ENDPOINT` in `script.js` to your server URL, e.g.:
 ```js
 const APPWRITE_ENDPOINT = "https://appwrite.yourdomain.com/v1";
 ```
+
+For full self-hosting instructions see [Appwrite's official documentation](https://appwrite.io/docs/advanced/self-hosting).

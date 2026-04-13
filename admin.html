@@ -469,9 +469,9 @@
 
         // Populate shop info in UI
         const shopName = currentShop.shopName;
-        const baseUrl  = window.location.origin +
-          window.location.pathname.replace(/admin\.html$/, "index.html");
-        const publicUrl = baseUrl + "?shop=" + encodeURIComponent(shopName);
+        // Build the public shop URL robustly: use origin + /index.html to avoid
+        // edge cases when admin.html is served from a subdirectory or without extension.
+        const publicUrl = window.location.origin + "/index.html?shop=" + encodeURIComponent(shopName);
 
         document.getElementById("header-shop-name").textContent = shopName;
         document.getElementById("banner-shop-name").textContent = shopName;
@@ -606,7 +606,7 @@
       document.getElementById("product-name").focus();
 
       document.querySelectorAll("tbody tr").forEach(r => r.classList.remove("editing-row"));
-      const row = document.getElementById("row-" + id); // id here is already p.$id
+      const row = document.getElementById("row-" + id); // id parameter holds the product's Appwrite $id
       if (row) row.classList.add("editing-row");
 
       window.scrollTo({ top: 0, behavior: "smooth" });
