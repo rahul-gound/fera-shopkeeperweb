@@ -1,0 +1,478 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Shop — Order Products</title>
+  <style>
+    /* ── Reset & Base ── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Segoe UI', Arial, sans-serif;
+      background: #f0f4f8;
+      color: #333;
+      min-height: 100vh;
+    }
+
+    /* ── Header ── */
+    header {
+      background: linear-gradient(135deg, #28a745, #20c997);
+      color: #fff;
+      padding: 20px 16px;
+      text-align: center;
+      box-shadow: 0 3px 10px rgba(0,0,0,.15);
+    }
+    header h1 { font-size: 1.8rem; letter-spacing: .5px; }
+    header p  { font-size: .95rem; margin-top: 4px; opacity: .9; }
+
+    /* ── Main content ── */
+    main { max-width: 900px; margin: 0 auto; padding: 24px 16px 60px; }
+
+    #section-title {
+      font-size: 1.2rem;
+      font-weight: 600;
+      margin-bottom: 16px;
+      color: #444;
+    }
+
+    /* ── Product grid ── */
+    #products-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+      gap: 18px;
+    }
+
+    /* Product card */
+    .product-card {
+      background: #fff;
+      border-radius: 14px;
+      padding: 22px 18px;
+      box-shadow: 0 2px 10px rgba(0,0,0,.08);
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      transition: transform .2s, box-shadow .2s;
+    }
+    .product-card:hover {
+      transform: translateY(-3px);
+      box-shadow: 0 6px 20px rgba(0,0,0,.12);
+    }
+    .product-card h3 { font-size: 1.1rem; color: #222; }
+    .product-card .price {
+      font-size: 1.3rem;
+      font-weight: 700;
+      color: #28a745;
+    }
+    .btn-order {
+      margin-top: auto;
+      background: #ff6b35;
+      color: #fff;
+      border: none;
+      padding: 11px 0;
+      border-radius: 8px;
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background .2s, transform .1s;
+    }
+    .btn-order:hover  { background: #e55d2b; }
+    .btn-order:active { transform: scale(.97); }
+
+    /* Loading & empty states */
+    #loading-msg, #empty-msg {
+      grid-column: 1 / -1;
+      text-align: center;
+      padding: 40px 0;
+      color: #888;
+      font-size: 1rem;
+    }
+    .spinner {
+      width: 36px; height: 36px;
+      border: 4px solid #ddd;
+      border-top-color: #28a745;
+      border-radius: 50%;
+      animation: spin .7s linear infinite;
+      margin: 0 auto 12px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Modal overlay ── */
+    .modal-overlay {
+      display: none;
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,.5);
+      z-index: 100;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+    }
+    .modal-overlay.active { display: flex; }
+
+    .modal {
+      background: #fff;
+      border-radius: 16px;
+      padding: 28px 24px;
+      width: 100%;
+      max-width: 420px;
+      box-shadow: 0 8px 30px rgba(0,0,0,.2);
+      position: relative;
+      animation: slideUp .25s ease;
+    }
+    @keyframes slideUp {
+      from { transform: translateY(30px); opacity: 0; }
+      to   { transform: translateY(0);    opacity: 1; }
+    }
+
+    .modal h2 { font-size: 1.3rem; margin-bottom: 4px; color: #222; }
+    .modal .product-info { color: #666; font-size: .9rem; margin-bottom: 20px; }
+    .modal .product-info span { font-weight: 700; color: #28a745; }
+
+    .form-group { margin-bottom: 16px; }
+    .form-group label {
+      display: block;
+      font-size: .9rem;
+      font-weight: 600;
+      margin-bottom: 6px;
+      color: #555;
+    }
+    .form-group input {
+      width: 100%;
+      padding: 11px 14px;
+      border: 1.5px solid #ddd;
+      border-radius: 8px;
+      font-size: 1rem;
+      transition: border-color .2s;
+      outline: none;
+    }
+    .form-group input:focus { border-color: #28a745; }
+
+    .modal-actions {
+      display: flex;
+      gap: 10px;
+      margin-top: 4px;
+    }
+    .btn-cancel {
+      flex: 1;
+      padding: 11px;
+      border: 1.5px solid #ddd;
+      background: #fff;
+      color: #555;
+      border-radius: 8px;
+      font-size: 1rem;
+      cursor: pointer;
+      font-weight: 600;
+      transition: background .2s;
+    }
+    .btn-cancel:hover { background: #f5f5f5; }
+
+    .btn-confirm {
+      flex: 2;
+      padding: 11px;
+      background: #28a745;
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      font-size: 1rem;
+      font-weight: 700;
+      cursor: pointer;
+      transition: background .2s, transform .1s;
+    }
+    .btn-confirm:hover  { background: #218838; }
+    .btn-confirm:active { transform: scale(.97); }
+    .btn-confirm:disabled { background: #94d4a7; cursor: not-allowed; }
+
+    /* OTP success panel */
+    #otp-panel {
+      display: none;
+      text-align: center;
+      padding: 10px 0 4px;
+    }
+    #otp-panel .otp-icon  { font-size: 2.5rem; margin-bottom: 8px; }
+    #otp-panel h3         { font-size: 1.1rem; margin-bottom: 8px; color: #333; }
+    #otp-panel .otp-box {
+      background: #f0f4f8;
+      border: 2px dashed #28a745;
+      border-radius: 10px;
+      padding: 14px;
+      font-size: 2rem;
+      font-weight: 700;
+      color: #28a745;
+      letter-spacing: 10px;
+      margin: 8px 0 14px;
+    }
+    #otp-panel p {
+      font-size: .85rem;
+      color: #666;
+      margin-bottom: 16px;
+    }
+    .btn-whatsapp {
+      width: 100%;
+      padding: 12px;
+      background: #25D366;
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      font-size: 1rem;
+      font-weight: 700;
+      cursor: pointer;
+      transition: background .2s;
+    }
+    .btn-whatsapp:hover { background: #1ebe5d; }
+
+    /* Close button */
+    .btn-close-modal {
+      position: absolute;
+      top: 14px; right: 16px;
+      background: none;
+      border: none;
+      font-size: 1.4rem;
+      cursor: pointer;
+      color: #999;
+      line-height: 1;
+    }
+    .btn-close-modal:hover { color: #333; }
+
+    /* Toast animation */
+    @keyframes fadein { from { opacity: 0; transform: translateX(-50%) translateY(10px); } }
+
+    /* ── Footer ── */
+    footer {
+      text-align: center;
+      padding: 20px;
+      font-size: .8rem;
+      color: #aaa;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ── HEADER ── -->
+  <header>
+    <h1 id="shop-header-name">🛒 Shop</h1>
+    <p>Browse products and place your order via WhatsApp</p>
+  </header>
+
+  <!-- ── MAIN CONTENT ── -->
+  <main>
+    <p id="section-title">Available Products</p>
+    <div id="products-grid">
+      <!-- Loading spinner shown until products are fetched -->
+      <div id="loading-msg">
+        <div class="spinner"></div>
+        Loading products…
+      </div>
+    </div>
+  </main>
+
+  <footer>Powered by Firebase &amp; WhatsApp</footer>
+
+  <!-- ── ORDER MODAL ── -->
+  <div class="modal-overlay" id="order-modal">
+    <div class="modal">
+      <button class="btn-close-modal" onclick="closeOrderModal()" aria-label="Close">✕</button>
+
+      <!-- Step 1: Fill in name and quantity -->
+      <div id="order-form-panel">
+        <h2>Place Order</h2>
+        <p class="product-info" id="modal-product-info"></p>
+
+        <div class="form-group">
+          <label for="customer-name">Your Name</label>
+          <input type="text" id="customer-name" placeholder="e.g. Rahul Sharma" maxlength="60" />
+        </div>
+        <div class="form-group">
+          <label for="order-qty">Quantity</label>
+          <input type="number" id="order-qty" placeholder="1" min="1" max="999" value="1" />
+        </div>
+
+        <div class="modal-actions">
+          <button class="btn-cancel" onclick="closeOrderModal()">Cancel</button>
+          <button class="btn-confirm" id="btn-place-order" onclick="placeOrder()">
+            Confirm Order
+          </button>
+        </div>
+      </div>
+
+      <!-- Step 2: Show OTP and WhatsApp button -->
+      <div id="otp-panel">
+        <div class="otp-icon">✅</div>
+        <h3>Order Placed!</h3>
+        <div class="otp-box" id="otp-display">----</div>
+        <p>Share this OTP with the shopkeeper when you collect your order.</p>
+        <button class="btn-whatsapp" id="btn-whatsapp" onclick="sendOrderWhatsApp()">
+          📲 Send via WhatsApp
+        </button>
+        <br /><br />
+        <button class="btn-cancel" onclick="closeOrderModal()">Done</button>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ── FIREBASE SDKs (loaded before script.js) ── -->
+  <!-- Using Firebase 9 "compat" mode so syntax matches Firestore v8 tutorials -->
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
+  <script src="script.js"></script>
+
+  <!-- ── PAGE SCRIPT ── -->
+  <script>
+    // ── State ──────────────────────────────────────────────
+    let currentProduct = null; // product selected for ordering
+
+    // ── On page load ───────────────────────────────────────
+    document.addEventListener("DOMContentLoaded", () => {
+      // Set shop name from shared config (script.js)
+      document.getElementById("shop-header-name").textContent = "🛒 " + SHOP_NAME;
+      document.title = SHOP_NAME + " — Order Products";
+      loadProducts();
+    });
+
+    // ── Fetch and render products from Firestore ────────────
+    async function loadProducts() {
+      const grid = document.getElementById("products-grid");
+      try {
+        const products = await getProducts(); // defined in script.js
+
+        grid.innerHTML = ""; // clear spinner
+
+        if (products.length === 0) {
+          grid.innerHTML = `<p id="empty-msg">No products available yet. Check back soon! 🙏</p>`;
+          return;
+        }
+
+        products.forEach(p => {
+          const card = document.createElement("div");
+          card.className = "product-card";
+          card.innerHTML = `
+            <h3>${escapeHtml(p.name)}</h3>
+            <div class="price">₹${parseFloat(p.price).toFixed(2)}</div>
+            <button class="btn-order" onclick="openOrderModal('${p.id}', '${escapeAttr(p.name)}', ${parseFloat(p.price)})">
+              🛍️ Order
+            </button>
+          `;
+          grid.appendChild(card);
+        });
+      } catch (err) {
+        console.error("Failed to load products:", err);
+        grid.innerHTML = `<p id="empty-msg" style="color:#dc3545">
+          Failed to load products. Please check your internet connection.</p>`;
+      }
+    }
+
+    // ── Open order modal for a specific product ─────────────
+    function openOrderModal(id, name, price) {
+      currentProduct = { id, name, price: parseFloat(price) };
+
+      // Reset form
+      document.getElementById("customer-name").value = "";
+      document.getElementById("order-qty").value = "1";
+      document.getElementById("order-form-panel").style.display = "block";
+      document.getElementById("otp-panel").style.display = "none";
+      document.getElementById("btn-place-order").disabled = false;
+
+      document.getElementById("modal-product-info").innerHTML =
+        `Ordering: <strong>${escapeHtml(name)}</strong> &nbsp;|&nbsp; ` +
+        `Price: <span>₹${parseFloat(price).toFixed(2)}</span> each`;
+
+      document.getElementById("order-modal").classList.add("active");
+      document.getElementById("customer-name").focus();
+    }
+
+    // ── Close the modal and reset state ────────────────────
+    function closeOrderModal() {
+      document.getElementById("order-modal").classList.remove("active");
+      currentProduct = null;
+    }
+
+    // ── Place an order ──────────────────────────────────────
+    async function placeOrder() {
+      if (!currentProduct) return;
+
+      const name = document.getElementById("customer-name").value.trim();
+      const qty  = parseInt(document.getElementById("order-qty").value, 10);
+
+      // Validate inputs
+      if (!name) {
+        showToast("Please enter your name.", "error");
+        document.getElementById("customer-name").focus();
+        return;
+      }
+      if (!qty || qty < 1) {
+        showToast("Quantity must be at least 1.", "error");
+        document.getElementById("order-qty").focus();
+        return;
+      }
+
+      const btn = document.getElementById("btn-place-order");
+      btn.disabled = true;
+      btn.textContent = "Saving…";
+
+      try {
+        const otp = generateOTP(); // from script.js
+        await saveOrder(            // from script.js
+          currentProduct.name,
+          currentProduct.price,
+          qty,
+          name,
+          otp
+        );
+
+        // Store for WhatsApp button
+        currentProduct._qty          = qty;
+        currentProduct._customerName = name;
+        currentProduct._otp          = otp;
+        currentProduct._totalPrice   = (currentProduct.price * qty).toFixed(2);
+
+        // Show OTP panel
+        document.getElementById("otp-display").textContent = otp;
+        document.getElementById("order-form-panel").style.display = "none";
+        document.getElementById("otp-panel").style.display = "block";
+
+        showToast("Order placed successfully!");
+      } catch (err) {
+        console.error("Order save failed:", err);
+        showToast("Failed to place order. Please try again.", "error");
+        btn.disabled = false;
+        btn.textContent = "Confirm Order";
+      }
+    }
+
+    // ── Send WhatsApp message ───────────────────────────────
+    function sendOrderWhatsApp() {
+      if (!currentProduct) return;
+      sendWhatsApp(              // from script.js
+        currentProduct.name,
+        currentProduct._qty,
+        currentProduct._totalPrice,
+        currentProduct._customerName,
+        currentProduct._otp
+      );
+    }
+
+    // ── Helpers ────────────────────────────────────────────
+
+    // Escape HTML entities to prevent XSS in innerHTML
+    function escapeHtml(str) {
+      return String(str)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
+    }
+
+    // Escape for use inside HTML attribute values (onclick arguments)
+    function escapeAttr(str) {
+      return String(str)
+        .replace(/\\/g, "\\\\")
+        .replace(/'/g, "\\'");
+    }
+
+    // Close modal when clicking the overlay backdrop
+    document.getElementById("order-modal").addEventListener("click", function(e) {
+      if (e.target === this) closeOrderModal();
+    });
+  </script>
+</body>
+</html>
