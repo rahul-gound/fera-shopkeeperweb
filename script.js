@@ -1,34 +1,38 @@
 // ============================================================
-// script.js — Shared Firebase config, utilities, and CRUD
+// script.js — Shared Appwrite config, utilities, and CRUD
 // Used by both index.html (customer) and admin.html (shopkeeper)
 // ============================================================
 
-// ── 1. FIREBASE CONFIGURATION ────────────────────────────────
-// Go to Firebase Console → Your Project → Project Settings
-// → Your Apps → Web App → copy the config object below
-const firebaseConfig = {
-  apiKey: "YOUR_API_KEY",
-  authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
-  projectId: "YOUR_PROJECT_ID",
-  storageBucket: "YOUR_PROJECT_ID.appspot.com",
-  messagingSenderId: "YOUR_MESSAGING_SENDER_ID",
-  appId: "YOUR_APP_ID"
-};
+// ── 1. APPWRITE CONFIGURATION ────────────────────────────────
+// Go to Appwrite Console → Your Project → Settings → copy the
+// Project ID and API Endpoint below.
+// Create a Database and note its Database ID.
+// Create three collections: products, orders, expenses.
+const APPWRITE_ENDPOINT        = "https://cloud.appwrite.io/v1"; // or your self-hosted URL
+const APPWRITE_PROJECT_ID      = "YOUR_PROJECT_ID";
+const APPWRITE_DATABASE_ID     = "YOUR_DATABASE_ID";
+const APPWRITE_PRODUCTS_COL    = "products";
+const APPWRITE_ORDERS_COL      = "orders";
+const APPWRITE_EXPENSES_COL    = "expenses";
 
 // Guard: warn loudly if the developer forgot to replace placeholders
-if (firebaseConfig.apiKey === "YOUR_API_KEY") {
+if (APPWRITE_PROJECT_ID === "YOUR_PROJECT_ID") {
   console.error(
-    "[Setup required] Firebase is not configured.\n" +
-    "Open script.js and replace the placeholder values with your real Firebase project config.\n" +
+    "[Setup required] Appwrite is not configured.\n" +
+    "Open script.js and replace the placeholder values with your real Appwrite project config.\n" +
     "See README.md for step-by-step instructions."
   );
 }
 
-// Initialize Firebase (only once, guard against double-init)
-if (!firebase.apps.length) {
-  firebase.initializeApp(firebaseConfig);
-}
-const db = firebase.firestore();
+// Initialize Appwrite client and services
+const { Client, Databases, Account, Query, ID } = Appwrite;
+
+const _client = new Client()
+  .setEndpoint(APPWRITE_ENDPOINT)
+  .setProject(APPWRITE_PROJECT_ID);
+
+const databases = new Databases(_client);
+const account   = new Account(_client);
 
 // ── 2. SHOP CONFIGURATION ────────────────────────────────────
 // Replace with your WhatsApp phone number (with country code, no + or spaces)
@@ -74,13 +78,13 @@ function sendWhatsApp(productName, quantity, totalPrice, customerName, otp) {
 }
 
 /**
- * Format a Firestore Timestamp or JS Date into a readable string.
- * @param {firebase.firestore.Timestamp|Date|null} timestamp
+ * Format an Appwrite ISO date string or JS Date into a readable string.
+ * @param {string|Date|null} timestamp
  * @returns {string}
  */
 function formatDate(timestamp) {
   if (!timestamp) return "N/A";
-  const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp);
+  const date = new Date(timestamp);
   return date.toLocaleDateString("en-IN", {
     day: "2-digit",
     month: "short",
@@ -116,38 +120,49 @@ function showToast(message, type = "success") {
 
 /**
  * Fetch all products ordered by newest first.
- * @returns {Promise<Array<{id:string, name:string, price:number, createdAt:Timestamp}>>}
+ * @returns {Promise<Array<{id:string, name:string, price:number, createdAt:string}>>}
  */
 async function getProducts() {
-  const snap = await db.collection("products").orderBy("createdAt", "desc").get();
-  return snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+  const res = await databases.listDocuments(
+    APPWRITE_DATABASE_ID,
+    APPWRITE_PRODUCTS_COL,
+    [Query.orderDesc("$createdAt")]
+  );
+  return res.documents.map(doc => ({
+    id: doc.$id,
+    name: doc.name,
+    price: doc.price,
+    createdAt: doc.$createdAt
+  }));
 }
 
 /**
- * Add a new product to Firestore.
+ * Add a new product to the Appwrite database.
  * @param {string} name
  * @param {number|string} price
- * @returns {Promise<firebase.firestore.DocumentReference>}
  */
 async function addProduct(name, price) {
-  return db.collection("products").add({
-    name: name.trim(),
-    price: parseFloat(price),
-    createdAt: firebase.firestore.FieldValue.serverTimestamp()
-  });
+  return databases.createDocument(
+    APPWRITE_DATABASE_ID,
+    APPWRITE_PRODUCTS_COL,
+    ID.unique(),
+    { name: name.trim(), price: parseFloat(price) }
+  );
 }
 
 /**
  * Update an existing product by document ID.
- * @param {string} id  Firestore document ID
+ * @param {string} id  Appwrite document ID
  * @param {string} name
  * @param {number|string} price
  */
 async function updateProduct(id, name, price) {
-  return db.collection("products").doc(id).update({
-    name: name.trim(),
-    price: parseFloat(price)
-  });
+  return databases.updateDocument(
+    APPWRITE_DATABASE_ID,
+    APPWRITE_PRODUCTS_COL,
+    id,
+    { name: name.trim(), price: parseFloat(price) }
+  );
 }
 
 /**
@@ -155,13 +170,17 @@ async function updateProduct(id, name, price) {
  * @param {string} id
  */
 async function deleteProduct(id) {
-  return db.collection("products").doc(id).delete();
+  return databases.deleteDocument(
+    APPWRITE_DATABASE_ID,
+    APPWRITE_PRODUCTS_COL,
+    id
+  );
 }
 
 // ── 5. ORDER CRUD ────────────────────────────────────────────
 
 /**
- * Save a new order to Firestore.
+ * Save a new order to the Appwrite database.
  * @param {string} productName
  * @param {number} price  Unit price
  * @param {number|string} quantity
@@ -172,15 +191,19 @@ async function deleteProduct(id) {
 async function saveOrder(productName, price, quantity, customerName, otp) {
   const qty = parseInt(quantity, 10);
   const totalPrice = parseFloat(price) * qty;
-  await db.collection("orders").add({
-    productName,
-    price: parseFloat(price),
-    quantity: qty,
-    totalPrice,
-    customerName: customerName.trim(),
-    otp,
-    createdAt: firebase.firestore.FieldValue.serverTimestamp()
-  });
+  await databases.createDocument(
+    APPWRITE_DATABASE_ID,
+    APPWRITE_ORDERS_COL,
+    ID.unique(),
+    {
+      productName,
+      price: parseFloat(price),
+      quantity: qty,
+      totalPrice,
+      customerName: customerName.trim(),
+      otp
+    }
+  );
   return totalPrice;
 }
 
@@ -192,50 +215,64 @@ async function saveOrder(productName, price, quantity, customerName, otp) {
  * @param {string} date  e.g. "2024-05-20"
  */
 async function addExpense(amount, date) {
-  return db.collection("expenses").add({
-    amount: parseFloat(amount),
-    date,
-    createdAt: firebase.firestore.FieldValue.serverTimestamp()
-  });
+  return databases.createDocument(
+    APPWRITE_DATABASE_ID,
+    APPWRITE_EXPENSES_COL,
+    ID.unique(),
+    { amount: parseFloat(amount), date }
+  );
 }
 
 /**
  * Sum all order totalPrices (total revenue).
+ * Fetches up to 500 orders; increase limit or paginate for larger datasets.
  * @returns {Promise<number>}
  */
 async function getTotalRevenue() {
-  const snap = await db.collection("orders").get();
-  let total = 0;
-  snap.forEach(doc => { total += doc.data().totalPrice || 0; });
-  return total;
+  const res = await databases.listDocuments(
+    APPWRITE_DATABASE_ID,
+    APPWRITE_ORDERS_COL,
+    [Query.limit(500)]
+  );
+  return res.documents.reduce((total, doc) => total + (doc.totalPrice || 0), 0);
 }
 
 /**
  * Sum all expense amounts.
+ * Fetches up to 500 expenses; increase limit or paginate for larger datasets.
  * @returns {Promise<number>}
  */
 async function getTotalExpenses() {
-  const snap = await db.collection("expenses").get();
-  let total = 0;
-  snap.forEach(doc => { total += doc.data().amount || 0; });
-  return total;
+  const res = await databases.listDocuments(
+    APPWRITE_DATABASE_ID,
+    APPWRITE_EXPENSES_COL,
+    [Query.limit(500)]
+  );
+  return res.documents.reduce((total, doc) => total + (doc.amount || 0), 0);
 }
 
 // ── 7. BONUS: Auto-delete orders older than 30 days ──────────
 // Uncomment and call this function from admin.html to clean up old orders.
-// For production, use Firebase Cloud Functions + a scheduled trigger instead.
+// For production, use an Appwrite Function with a scheduled trigger instead.
 /*
 async function deleteOldOrders() {
   const thirtyDaysAgo = new Date();
   thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
 
-  const oldOrders = await db.collection("orders")
-    .where("createdAt", "<", thirtyDaysAgo)
-    .get();
+  const res = await databases.listDocuments(
+    APPWRITE_DATABASE_ID,
+    APPWRITE_ORDERS_COL,
+    [
+      Query.lessThan("$createdAt", thirtyDaysAgo.toISOString()),
+      Query.limit(500)
+    ]
+  );
 
-  const batch = db.batch();
-  oldOrders.forEach(doc => batch.delete(doc.ref));
-  await batch.commit();
-  console.log(`Deleted ${oldOrders.size} orders older than 30 days.`);
+  await Promise.all(
+    res.documents.map(doc =>
+      databases.deleteDocument(APPWRITE_DATABASE_ID, APPWRITE_ORDERS_COL, doc.$id)
+    )
+  );
+  console.log(`Deleted ${res.documents.length} orders older than 30 days.`);
 }
 */

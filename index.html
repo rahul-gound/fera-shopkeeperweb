@@ -264,7 +264,7 @@
     </div>
   </main>
 
-  <footer>Powered by Firebase &amp; WhatsApp</footer>
+  <footer>Powered by Appwrite &amp; WhatsApp</footer>
 
   <!-- ── ORDER MODAL ── -->
   <div class="modal-overlay" id="order-modal">
@@ -309,10 +309,8 @@
     </div>
   </div>
 
-  <!-- ── FIREBASE SDKs (loaded before script.js) ── -->
-  <!-- Using Firebase 9 "compat" mode so syntax matches Firestore v8 tutorials -->
-  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
+  <!-- ── Appwrite SDK ── -->
+  <script src="https://cdn.jsdelivr.net/npm/appwrite@16.0.2/dist/iife/sdk.js"></script>
   <script src="script.js"></script>
 
   <!-- ── PAGE SCRIPT ── -->
@@ -328,7 +326,7 @@
       loadProducts();
     });
 
-    // ── Fetch and render products from Firestore ────────────
+    // ── Fetch and render products from Appwrite ────────────
     async function loadProducts() {
       const grid = document.getElementById("products-grid");
       try {
