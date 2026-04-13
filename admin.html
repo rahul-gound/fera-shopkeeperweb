@@ -433,10 +433,8 @@
 
   </main>
 
-  <!-- ── FIREBASE SDKs ── -->
-  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>
+  <!-- ── APPWRITE SDK ── -->
+  <script src="https://cdn.jsdelivr.net/npm/appwrite@15.0.0/dist/iife/sdk.js"></script>
   <script src="script.js"></script>
 
   <!-- ── PAGE SCRIPT ── -->
@@ -448,14 +446,20 @@
     let allProducts        = [];   // cached product list
 
     // ── Auth guard ─────────────────────────────────────────
-    auth.onAuthStateChanged(async user => {
-      if (!user) {
+    // Appwrite has no onAuthStateChanged listener; we call account.get() once on
+    // page load. It resolves with the user object if a session exists, or throws
+    // (code 401) if the user is not logged in — at which point we redirect.
+    document.addEventListener("DOMContentLoaded", async () => {
+      let user;
+      try {
+        user = await account.get(); // throws if not logged in
+      } catch {
         window.location.href = "login.html";
         return;
       }
 
       try {
-        currentShop = await getShopByUserId(user.uid);
+        currentShop = await getShopByUserId(user.$id); // $id is Appwrite's user identifier
         if (!currentShop) {
           showToast("Shop profile not found. Please contact support.", "error");
           await logoutUser();
@@ -541,20 +545,20 @@
     // Build a <tr> for one product
     function buildProductRow(p, index) {
       const tr = document.createElement("tr");
-      tr.id = "row-" + p.id;
+      tr.id = "row-" + p.$id; // Appwrite uses $id (not id)
       tr.innerHTML = `
         <td>${index}</td>
         <td>${escapeHtml(p.name)}</td>
         <td>₹${parseFloat(p.price).toFixed(2)}</td>
-        <td>${formatDate(p.createdAt)}</td>
+        <td>${formatDate(p.$createdAt)}</td>
         <td>
           <div class="actions-cell">
             <button class="btn btn-secondary btn-sm"
-              onclick="startEdit('${escapeAttr(p.id)}', '${escapeAttr(p.name)}', ${parseFloat(p.price)})">
+              onclick="startEdit('${escapeAttr(p.$id)}', '${escapeAttr(p.name)}', ${parseFloat(p.price)})">
               ✏️ Edit
             </button>
             <button class="btn btn-danger btn-sm"
-              onclick="confirmDelete('${escapeAttr(p.id)}', '${escapeAttr(p.name)}')">
+              onclick="confirmDelete('${escapeAttr(p.$id)}', '${escapeAttr(p.name)}')">
               🗑️ Delete
             </button>
           </div>
@@ -602,7 +606,7 @@
       document.getElementById("product-name").focus();
 
       document.querySelectorAll("tbody tr").forEach(r => r.classList.remove("editing-row"));
-      const row = document.getElementById("row-" + id);
+      const row = document.getElementById("row-" + id); // id here is already p.$id
       if (row) row.classList.add("editing-row");
 
       window.scrollTo({ top: 0, behavior: "smooth" });
@@ -658,7 +662,7 @@
             <td>${o.quantity || "—"}</td>
             <td>₹${parseFloat(o.totalPrice || 0).toFixed(2)}</td>
             <td><span class="order-badge">${escapeHtml(o.otp || "—")}</span></td>
-            <td>${formatDate(o.createdAt)}</td>
+            <td>${formatDate(o.$createdAt)}</td>
           `;
           tbody.appendChild(tr);
         });

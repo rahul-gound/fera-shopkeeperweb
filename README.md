@@ -1,6 +1,6 @@
 # Fera Shopkeeper Web
 
-A multi-tenant SaaS web app for shopkeepers built with HTML, CSS, Vanilla JavaScript, and Firebase.
+A multi-tenant SaaS web app for shopkeepers built with HTML, CSS, Vanilla JavaScript, and **Appwrite** (Auth + Database).
 
 Each shopkeeper registers an account, gets their own shop profile, and a unique public URL at:
 `yourapp.web.app/index.html?shop=yourshopname`
@@ -11,7 +11,7 @@ Each shopkeeper registers an account, gets their own shop profile, and a unique 
 
 | Feature | Description |
 |---|---|
-| 🔐 Authentication | Email/password sign-up and login (Firebase Auth) |
+| 🔐 Authentication | Email/password sign-up and login (Appwrite Auth) |
 | 🏪 Multi-tenant | Each shop is isolated by shopName slug |
 | 📦 Product Management | Add, edit, and delete products (scoped to shop) |
 | 🛒 Customer Order Page | Public product listing with order modal |
@@ -31,8 +31,8 @@ fera-shopkeeperweb/
 ├── login.html     ← Shopkeeper login page
 ├── index.html     ← Customer-facing product & order page (public, ?shop=slug)
 ├── admin.html     ← Shopkeeper admin dashboard (auth required)
-├── script.js      ← Shared Firebase config, auth, utilities, CRUD functions
-├── firebase.json  ← Firebase Hosting configuration
+├── script.js      ← Shared Appwrite config, auth, utilities, CRUD functions
+├── firebase.json  ← Firebase Hosting configuration (optional)
 └── README.md
 ```
 
@@ -41,9 +41,9 @@ fera-shopkeeperweb/
 ## How Multi-Tenancy Works
 
 - Each shopkeeper signs up with a unique **shop name slug** (e.g. `rahulstore`)
-- All data (products, orders, expenses) is stored in Firestore with a `shopId` field = the shop name slug
+- All data (products, orders, expenses) is stored in Appwrite Database with a `shopId` field equal to the shop name slug
 - The customer page reads `?shop=rahulstore` from the URL and loads only that shop's products
-- The admin page reads the logged-in user's shop profile from Firestore to scope all operations
+- The admin page calls `account.get()` on load and fetches the logged-in user's shop profile to scope all data
 
 ### Public shop URL format
 
@@ -55,139 +55,174 @@ https://YOUR_PROJECT_ID.web.app/index.html?shop=rahulstore
 
 ## Setup Guide
 
-### 1. Create a Firebase Project
+### 1. Create an Appwrite Account and Project
 
-1. Go to [Firebase Console](https://console.firebase.google.com/) and click **Add project**.
-2. Give your project a name and click **Create project**.
+1. Go to [cloud.appwrite.io](https://cloud.appwrite.io) and sign up (free).
+2. Click **Create Project**, give it a name (e.g. `fera-shopkeeper`), and click **Create**.
+3. Copy your **Project ID** from **Settings → Overview**.
 
-### 2. Enable Firebase Authentication
+### 2. Add a Web Platform
 
-1. In the Firebase Console, go to **Build → Authentication**.
-2. Click **Get started**.
-3. Under **Sign-in method**, enable **Email/Password**.
+This allows your web app to make authenticated API calls from the browser.
 
-### 3. Enable Firestore
+1. In the Appwrite console, go to **Settings → Platforms**.
+2. Click **Add Platform → Web**.
+3. Name: `Fera Web`
+4. Hostname: `localhost` (for local dev). For production, add your actual domain too.
+5. Click **Create**.
 
-1. In the Firebase Console, go to **Build → Firestore Database**.
-2. Click **Create database** → choose **Start in test mode** temporarily (for initial development only).
+### 3. Create a Database
 
-> ⚠️ **Important**: Test mode allows unrestricted read/write access. Apply Security Rules (see below) before sharing the URL.
+1. Go to **Databases** in the sidebar and click **Create Database**.
+2. Name it `fera-db` (or any name you like).
+3. Copy the **Database ID** shown below the name.
 
-3. Select a region and click **Enable**.
+### 4. Create Collections
 
-### 4. Register a Web App
+Create four collections inside your database. The **Collection ID** must match exactly.
 
-1. In the Firebase Console, go to **Project Settings** (⚙️ gear icon).
-2. Under **Your apps**, click the **</>** (Web) icon.
-3. Register the app. Copy the `firebaseConfig` object shown.
+---
+
+#### Collection: `shops`
+
+| Attribute | Type | Required | Notes |
+|---|---|---|---|
+| `userId` | String | ✅ | Appwrite user `$id` |
+| `shopName` | String | ✅ | Unique shop slug |
+| `whatsappNumber` | String | ✅ | Digits only |
+
+**Permissions (Collection level)**:
+- Create: `users` (any authenticated user)
+- Read: `any`
+- Update: `users`
+- Delete: `users`
+
+**Indexes**:
+- Key: `shopName`, Type: `key`, Attributes: `shopName ASC`
+
+---
+
+#### Collection: `products`
+
+| Attribute | Type | Required |
+|---|---|---|
+| `shopId` | String | ✅ |
+| `name` | String | ✅ |
+| `price` | Float | ✅ |
+
+**Permissions (Collection level)**:
+- Create: `users`
+- Read: `any`
+- Update: `users`
+- Delete: `users`
+
+**Indexes**:
+- Key: `shopId_createdAt`, Type: `key`, Attributes: `shopId ASC`, `$createdAt DESC`
+
+---
+
+#### Collection: `orders`
+
+| Attribute | Type | Required |
+|---|---|---|
+| `shopId` | String | ✅ |
+| `productName` | String | ✅ |
+| `price` | Float | ✅ |
+| `quantity` | Integer | ✅ |
+| `totalPrice` | Float | ✅ |
+| `customerName` | String | ✅ |
+| `otp` | String | ✅ |
+
+**Permissions (Collection level)**:
+- Create: `any` (customers are not logged in)
+- Read: `users`
+- Update: `users`
+- Delete: `users`
+
+**Indexes**:
+- Key: `shopId_createdAt`, Type: `key`, Attributes: `shopId ASC`, `$createdAt DESC`
+
+---
+
+#### Collection: `expenses`
+
+| Attribute | Type | Required |
+|---|---|---|
+| `shopId` | String | ✅ |
+| `amount` | Float | ✅ |
+| `date` | String | ✅ | e.g. "2024-05-20" |
+
+**Permissions (Collection level)**:
+- Create: `users`
+- Read: `users`
+- Update: `users`
+- Delete: `users`
+
+**Indexes**:
+- Key: `shopId_createdAt`, Type: `key`, Attributes: `shopId ASC`, `$createdAt DESC`
+
+> ⚠️ For each collection, make sure **Document Security** is **OFF** (so collection-level permissions apply to all documents).
+
+---
 
 ### 5. Configure `script.js`
 
-Open `script.js` and replace the placeholder values with your Firebase config:
+Open `script.js` and fill in your values:
 
 ```js
-const firebaseConfig = {
-  apiKey: "YOUR_API_KEY",
-  authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
-  projectId: "YOUR_PROJECT_ID",
-  storageBucket: "YOUR_PROJECT_ID.appspot.com",
-  messagingSenderId: "YOUR_MESSAGING_SENDER_ID",
-  appId: "YOUR_APP_ID"
-};
+const APPWRITE_ENDPOINT   = "https://cloud.appwrite.io/v1"; // keep as-is for Appwrite Cloud
+const APPWRITE_PROJECT_ID = "YOUR_PROJECT_ID";              // from Settings → Overview
+const DATABASE_ID         = "YOUR_DATABASE_ID";             // from Databases → your DB
+
+// Collection IDs (must match what you created above)
+const COLLECTION_SHOPS    = "shops";
+const COLLECTION_PRODUCTS = "products";
+const COLLECTION_ORDERS   = "orders";
+const COLLECTION_EXPENSES = "expenses";
 ```
 
-### 6. Create Firestore Indexes
+### 6. Run Locally
 
-Some queries require composite indexes. Go to **Firestore → Indexes** and create:
-
-| Collection | Fields | Order |
-|---|---|---|
-| `shops` | `shopName` ASC | Single-field (if needed for large datasets) |
-| `products` | `shopId` ASC, `createdAt` DESC | Composite |
-| `orders` | `shopId` ASC, `createdAt` DESC | Composite |
-| `expenses` | `shopId` ASC, `createdAt` DESC | Composite |
-
-> Firebase will also automatically prompt you to create missing indexes when you first run queries — click the link in the browser console error.
-
-### 7. Deploy to Firebase Hosting
+Since the app is plain HTML/JS/CSS, you can open it with any static file server:
 
 ```bash
-# Install Firebase CLI globally (one-time)
+# Using the VS Code Live Server extension (recommended)
+# Right-click index.html → Open with Live Server
+
+# Or using Node.js
+npx serve .
+
+# Or using Python
+python -m http.server 8000
+```
+
+Then open `http://localhost:8000/signup.html` to create your first shop.
+
+### 7. Deploy to Firebase Hosting (optional)
+
+```bash
 npm install -g firebase-tools
-
-# Login to Firebase
 firebase login
-
-# Initialize hosting (run from project root)
 firebase init hosting
-# → Select your project
-# → Public directory: .  (just a dot)
-# → Single-page app: No
-
-# Deploy
+# Public directory: .
+# Single-page app: No
 firebase deploy
 ```
 
-Your app will be live at `https://YOUR_PROJECT_ID.web.app`.
+Or deploy to **Appwrite Static Hosting**, **Netlify**, **Vercel**, or any static host — just upload the files.
 
 ---
 
-## Firestore Collections
+## Database Schema
 
-| Collection | Fields |
+| Collection | Custom Fields |
 |---|---|
-| `shops` | `userId`, `shopName` (unique slug), `whatsappNumber`, `createdAt` |
-| `products` | `shopId`, `name`, `price`, `createdAt` |
-| `orders` | `shopId`, `productName`, `price`, `quantity`, `totalPrice`, `customerName`, `otp`, `createdAt` |
-| `expenses` | `shopId`, `amount`, `date`, `createdAt` |
+| `shops` | `userId`, `shopName`, `whatsappNumber` |
+| `products` | `shopId`, `name`, `price` |
+| `orders` | `shopId`, `productName`, `price`, `quantity`, `totalPrice`, `customerName`, `otp` |
+| `expenses` | `shopId`, `amount`, `date` |
 
----
-
-## Firestore Security Rules
-
-Replace the default test-mode rules with these before going live:
-
-```
-rules_version = '2';
-service cloud.firestore {
-  match /databases/{database}/documents {
-
-    // Shops: only the owner can read/write their own shop document
-    match /shops/{uid} {
-      allow read: if true;  // public for shop lookup by customers
-      allow write: if request.auth != null && request.auth.uid == uid;
-    }
-
-    // Products: anyone can read; only the shop owner can write
-    match /products/{id} {
-      allow read: if true;
-      allow create: if request.auth != null
-        && exists(/databases/$(database)/documents/shops/$(request.auth.uid))
-        && request.resource.data.shopId ==
-           get(/databases/$(database)/documents/shops/$(request.auth.uid)).data.shopName;
-      allow update, delete: if request.auth != null
-        && resource.data.shopId ==
-           get(/databases/$(database)/documents/shops/$(request.auth.uid)).data.shopName;
-    }
-
-    // Orders: anyone can create; only the shop owner can read
-    match /orders/{id} {
-      allow create: if true;
-      allow read: if request.auth != null
-        && resource.data.shopId ==
-           get(/databases/$(database)/documents/shops/$(request.auth.uid)).data.shopName;
-      allow update, delete: if false;
-    }
-
-    // Expenses: only the shop owner
-    match /expenses/{id} {
-      allow read, write: if request.auth != null
-        && (resource == null || resource.data.shopId ==
-           get(/databases/$(database)/documents/shops/$(request.auth.uid)).data.shopName);
-    }
-  }
-}
-```
+> All documents also have Appwrite built-in fields: `$id`, `$createdAt`, `$updatedAt`, `$permissions`.
 
 ---
 
@@ -199,3 +234,23 @@ service cloud.firestore {
 | `/login.html` | Shopkeeper login |
 | `/admin.html` | Shopkeeper admin dashboard (auth required) |
 | `/index.html?shop=yourshop` | Customer product listing and ordering page |
+
+---
+
+## Self-Hosted Appwrite
+
+If you prefer to run your own Appwrite instance instead of using Appwrite Cloud:
+
+```bash
+# Install Appwrite using Docker
+docker run -it --rm \
+  --volume /var/run/docker.sock:/var/run/docker.sock \
+  --volume "$(pwd)"/appwrite:/usr/src/code/appwrite:rw \
+  --entrypoint="install" \
+  appwrite/appwrite:latest
+```
+
+Then update `APPWRITE_ENDPOINT` in `script.js` to your server URL, e.g.:
+```js
+const APPWRITE_ENDPOINT = "https://appwrite.yourdomain.com/v1";
+```
