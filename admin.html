@@ -1,0 +1,591 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Admin Panel — Shopkeeper</title>
+  <style>
+    /* ── Reset & Base ── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Segoe UI', Arial, sans-serif;
+      background: #f0f4f8;
+      color: #333;
+      min-height: 100vh;
+    }
+
+    /* ── Header ── */
+    header {
+      background: linear-gradient(135deg, #343a40, #495057);
+      color: #fff;
+      padding: 18px 16px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      box-shadow: 0 3px 10px rgba(0,0,0,.2);
+    }
+    header h1 { font-size: 1.4rem; }
+    header a {
+      color: #adb5bd;
+      text-decoration: none;
+      font-size: .9rem;
+      border: 1px solid #6c757d;
+      padding: 6px 14px;
+      border-radius: 6px;
+      transition: color .2s, border-color .2s;
+    }
+    header a:hover { color: #fff; border-color: #adb5bd; }
+
+    /* ── Layout ── */
+    main { max-width: 960px; margin: 0 auto; padding: 28px 16px 60px; }
+
+    /* ── Card ── */
+    .card {
+      background: #fff;
+      border-radius: 14px;
+      padding: 24px 22px;
+      box-shadow: 0 2px 10px rgba(0,0,0,.08);
+      margin-bottom: 28px;
+    }
+    .card-title {
+      font-size: 1.15rem;
+      font-weight: 700;
+      margin-bottom: 20px;
+      color: #333;
+      padding-bottom: 12px;
+      border-bottom: 2px solid #f0f4f8;
+    }
+
+    /* ── Form Row ── */
+    .form-row {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      align-items: flex-end;
+      margin-bottom: 16px;
+    }
+    .form-group { display: flex; flex-direction: column; flex: 1; min-width: 140px; }
+    .form-group label {
+      font-size: .85rem;
+      font-weight: 600;
+      margin-bottom: 6px;
+      color: #555;
+    }
+    .form-group input, .form-group select {
+      padding: 10px 13px;
+      border: 1.5px solid #ddd;
+      border-radius: 8px;
+      font-size: .95rem;
+      outline: none;
+      transition: border-color .2s;
+    }
+    .form-group input:focus { border-color: #28a745; }
+
+    /* ── Buttons ── */
+    .btn {
+      padding: 10px 20px;
+      border: none;
+      border-radius: 8px;
+      font-size: .95rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background .2s, transform .1s;
+    }
+    .btn:active { transform: scale(.97); }
+    .btn-primary   { background: #28a745; color: #fff; }
+    .btn-primary:hover   { background: #218838; }
+    .btn-secondary { background: #007bff; color: #fff; }
+    .btn-secondary:hover { background: #0069d9; }
+    .btn-danger    { background: #dc3545; color: #fff; }
+    .btn-danger:hover    { background: #c82333; }
+    .btn-sm { padding: 6px 14px; font-size: .85rem; }
+    .btn:disabled { opacity: .6; cursor: not-allowed; }
+
+    /* ── Product Table ── */
+    .table-wrap { overflow-x: auto; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: .95rem;
+    }
+    th, td {
+      text-align: left;
+      padding: 11px 14px;
+      border-bottom: 1px solid #f0f4f8;
+    }
+    th {
+      background: #f8f9fa;
+      font-weight: 700;
+      color: #555;
+      font-size: .85rem;
+      text-transform: uppercase;
+      letter-spacing: .5px;
+    }
+    tr:last-child td { border-bottom: none; }
+    tbody tr:hover { background: #f9fff9; }
+
+    .actions-cell { display: flex; gap: 8px; }
+
+    /* ── Empty / Loading ── */
+    .empty-row td {
+      text-align: center;
+      color: #aaa;
+      padding: 32px 0;
+    }
+    .spinner {
+      width: 30px; height: 30px;
+      border: 3px solid #ddd;
+      border-top-color: #28a745;
+      border-radius: 50%;
+      animation: spin .7s linear infinite;
+      display: inline-block;
+      vertical-align: middle;
+      margin-right: 8px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Edit inline row ── */
+    .editing-row td { background: #fffbf0; }
+    .edit-input {
+      width: 100%;
+      padding: 6px 10px;
+      border: 1.5px solid #ffc107;
+      border-radius: 6px;
+      font-size: .9rem;
+    }
+
+    /* ── Profit Stats ── */
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+      gap: 16px;
+      margin-bottom: 20px;
+    }
+    .stat-box {
+      background: #f8f9fa;
+      border-radius: 10px;
+      padding: 18px 16px;
+      text-align: center;
+      border-left: 4px solid #ccc;
+    }
+    .stat-box.revenue { border-left-color: #28a745; }
+    .stat-box.expense { border-left-color: #dc3545; }
+    .stat-box.profit  { border-left-color: #007bff; }
+    .stat-box .label  { font-size: .8rem; font-weight: 600; color: #888; text-transform: uppercase; letter-spacing: .5px; }
+    .stat-box .value  { font-size: 1.5rem; font-weight: 700; margin-top: 6px; }
+    .stat-box.revenue .value { color: #28a745; }
+    .stat-box.expense .value { color: #dc3545; }
+    .stat-box.profit  .value { color: #007bff; }
+
+    /* ── Expense list ── */
+    #expense-list { max-height: 220px; overflow-y: auto; margin-top: 16px; }
+    .expense-item {
+      display: flex;
+      justify-content: space-between;
+      padding: 10px 14px;
+      background: #f8f9fa;
+      border-radius: 8px;
+      margin-bottom: 8px;
+      font-size: .9rem;
+    }
+    .expense-item span { color: #555; }
+    .expense-item strong { color: #dc3545; }
+
+    /* Toast animation */
+    @keyframes fadein { from { opacity: 0; transform: translateX(-50%) translateY(10px); } }
+  </style>
+</head>
+<body>
+
+  <!-- ── HEADER ── -->
+  <header>
+    <h1>🏪 Admin Panel</h1>
+    <a href="index.html">← Customer Page</a>
+  </header>
+
+  <main>
+
+    <!-- ══════════════════════════════════════════════════════════
+         SECTION 1 — PRODUCT MANAGEMENT
+         ══════════════════════════════════════════════════════════ -->
+    <div class="card">
+      <div class="card-title">📦 Product Management</div>
+
+      <!-- Add / Edit form -->
+      <form id="product-form" onsubmit="handleProductSubmit(event)">
+        <div class="form-row">
+          <div class="form-group">
+            <label for="product-name">Product Name</label>
+            <input
+              type="text"
+              id="product-name"
+              placeholder="e.g. Basmati Rice 1 kg"
+              maxlength="100"
+              required
+            />
+          </div>
+          <div class="form-group" style="max-width: 160px;">
+            <label for="product-price">Price (₹)</label>
+            <input
+              type="number"
+              id="product-price"
+              placeholder="e.g. 120"
+              min="0.01"
+              step="0.01"
+              required
+            />
+          </div>
+          <div style="display:flex; align-items:flex-end; gap:8px;">
+            <button type="submit" class="btn btn-primary" id="btn-product-submit">
+              ➕ Add Product
+            </button>
+            <button type="button" class="btn" id="btn-cancel-edit"
+              style="display:none; background:#6c757d; color:#fff;"
+              onclick="cancelEdit()">
+              Cancel
+            </button>
+          </div>
+        </div>
+      </form>
+
+      <!-- Products table -->
+      <div class="table-wrap">
+        <table id="products-table">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Product Name</th>
+              <th>Price (₹)</th>
+              <th>Added On</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="products-tbody">
+            <tr class="empty-row">
+              <td colspan="5">
+                <span class="spinner"></span> Loading products…
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ══════════════════════════════════════════════════════════
+         SECTION 2 — PROFIT TRACKER
+         ══════════════════════════════════════════════════════════ -->
+    <div class="card">
+      <div class="card-title">📊 Profit Tracker</div>
+
+      <!-- Stats -->
+      <div class="stats-grid">
+        <div class="stat-box revenue">
+          <div class="label">Total Revenue</div>
+          <div class="value" id="stat-revenue">₹—</div>
+        </div>
+        <div class="stat-box expense">
+          <div class="label">Total Expenses</div>
+          <div class="value" id="stat-expense">₹—</div>
+        </div>
+        <div class="stat-box profit">
+          <div class="label">Net Profit</div>
+          <div class="value" id="stat-profit">₹—</div>
+        </div>
+      </div>
+
+      <button class="btn btn-secondary btn-sm" onclick="loadProfitStats()">
+        🔄 Refresh Stats
+      </button>
+
+      <!-- Add expense -->
+      <hr style="margin: 22px 0; border: none; border-top: 1px solid #f0f4f8;" />
+
+      <div class="card-title" style="border:none; margin-bottom:14px; padding:0; font-size:1rem;">
+        ➕ Add Daily Expense
+      </div>
+      <form id="expense-form" onsubmit="handleExpenseSubmit(event)">
+        <div class="form-row">
+          <div class="form-group" style="max-width: 200px;">
+            <label for="expense-amount">Amount (₹)</label>
+            <input
+              type="number"
+              id="expense-amount"
+              placeholder="e.g. 500"
+              min="0.01"
+              step="0.01"
+              required
+            />
+          </div>
+          <div class="form-group" style="max-width: 200px;">
+            <label for="expense-date">Date</label>
+            <input type="date" id="expense-date" required />
+          </div>
+          <div style="display:flex; align-items:flex-end;">
+            <button type="submit" class="btn btn-danger" id="btn-expense-submit">
+              💸 Add Expense
+            </button>
+          </div>
+        </div>
+      </form>
+
+      <!-- Expense history list -->
+      <div id="expense-list">
+        <p style="color:#aaa; font-size:.9rem; padding: 8px 0;">Loading expenses…</p>
+      </div>
+    </div>
+
+  </main>
+
+  <!-- ── FIREBASE SDKs ── -->
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
+  <script src="script.js"></script>
+
+  <!-- ── PAGE SCRIPT ── -->
+  <script>
+
+    // ── State ──────────────────────────────────────────────
+    let editingProductId   = null; // null = add mode; string = edit mode
+    let allProducts        = [];   // cached product list
+
+    // ── On page load ───────────────────────────────────────
+    document.addEventListener("DOMContentLoaded", () => {
+      // Default expense date to today
+      document.getElementById("expense-date").value = todayDateString();
+      loadAdminProducts();
+      loadProfitStats();
+      loadExpenseList();
+    });
+
+    // ════════════════════════════════════════════════════════
+    //  PRODUCT MANAGEMENT
+    // ════════════════════════════════════════════════════════
+
+    // Fetch all products and render the table
+    async function loadAdminProducts() {
+      const tbody = document.getElementById("products-tbody");
+      tbody.innerHTML = `<tr class="empty-row"><td colspan="5">
+        <span class="spinner"></span> Loading…</td></tr>`;
+
+      try {
+        allProducts = await getProducts(); // script.js
+
+        if (allProducts.length === 0) {
+          tbody.innerHTML = `<tr class="empty-row">
+            <td colspan="5">No products yet. Add one above!</td></tr>`;
+          return;
+        }
+
+        tbody.innerHTML = "";
+        allProducts.forEach((p, i) => {
+          tbody.appendChild(buildProductRow(p, i + 1));
+        });
+      } catch (err) {
+        console.error(err);
+        tbody.innerHTML = `<tr class="empty-row">
+          <td colspan="5" style="color:#dc3545">Failed to load products.</td></tr>`;
+      }
+    }
+
+    // Build a <tr> for one product
+    function buildProductRow(p, index) {
+      const tr = document.createElement("tr");
+      tr.id = "row-" + p.id;
+      tr.innerHTML = `
+        <td>${index}</td>
+        <td>${escapeHtml(p.name)}</td>
+        <td>₹${parseFloat(p.price).toFixed(2)}</td>
+        <td>${formatDate(p.createdAt)}</td>
+        <td>
+          <div class="actions-cell">
+            <button class="btn btn-secondary btn-sm"
+              onclick="startEdit('${escapeAttr(p.id)}', '${escapeAttr(p.name)}', ${parseFloat(p.price)})">
+              ✏️ Edit
+            </button>
+            <button class="btn btn-danger btn-sm"
+              onclick="confirmDelete('${escapeAttr(p.id)}', '${escapeAttr(p.name)}')">
+              🗑️ Delete
+            </button>
+          </div>
+        </td>
+      `;
+      return tr;
+    }
+
+    // Handle add/update form submit
+    async function handleProductSubmit(e) {
+      e.preventDefault();
+      const name  = document.getElementById("product-name").value.trim();
+      const price = document.getElementById("product-price").value;
+      if (!name || !price) return;
+
+      const btn = document.getElementById("btn-product-submit");
+      btn.disabled = true;
+
+      try {
+        if (editingProductId) {
+          // UPDATE existing product
+          await updateProduct(editingProductId, name, price); // script.js
+          showToast("Product updated!");
+          cancelEdit();
+        } else {
+          // ADD new product
+          await addProduct(name, price); // script.js
+          showToast("Product added!");
+          document.getElementById("product-form").reset();
+        }
+        await loadAdminProducts();
+      } catch (err) {
+        console.error(err);
+        showToast("Operation failed. Try again.", "error");
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
+    // Switch form into edit mode
+    function startEdit(id, name, price) {
+      editingProductId = id;
+      document.getElementById("product-name").value  = name;
+      document.getElementById("product-price").value = price;
+      document.getElementById("btn-product-submit").textContent = "💾 Save Changes";
+      document.getElementById("btn-cancel-edit").style.display  = "inline-block";
+      document.getElementById("product-name").focus();
+
+      // Highlight the row being edited
+      document.querySelectorAll("tbody tr").forEach(r => r.classList.remove("editing-row"));
+      const row = document.getElementById("row-" + id);
+      if (row) row.classList.add("editing-row");
+
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
+
+    // Cancel edit and reset to add mode
+    function cancelEdit() {
+      editingProductId = null;
+      document.getElementById("product-form").reset();
+      document.getElementById("btn-product-submit").textContent = "➕ Add Product";
+      document.getElementById("btn-cancel-edit").style.display  = "none";
+      document.querySelectorAll("tbody tr").forEach(r => r.classList.remove("editing-row"));
+    }
+
+    // Ask for confirmation before deleting
+    async function confirmDelete(id, name) {
+      if (!confirm(`Delete "${name}"?\nThis cannot be undone.`)) return;
+      try {
+        await deleteProduct(id); // script.js
+        showToast(`"${name}" deleted.`);
+        await loadAdminProducts();
+      } catch (err) {
+        console.error(err);
+        showToast("Delete failed. Try again.", "error");
+      }
+    }
+
+    // ════════════════════════════════════════════════════════
+    //  PROFIT TRACKER
+    // ════════════════════════════════════════════════════════
+
+    // Load and display revenue, expense, profit
+    async function loadProfitStats() {
+      document.getElementById("stat-revenue").textContent = "…";
+      document.getElementById("stat-expense").textContent = "…";
+      document.getElementById("stat-profit").textContent  = "…";
+
+      try {
+        const [revenue, expenses] = await Promise.all([
+          getTotalRevenue(),   // script.js
+          getTotalExpenses()   // script.js
+        ]);
+        const profit = revenue - expenses;
+
+        document.getElementById("stat-revenue").textContent = "₹" + revenue.toFixed(2);
+        document.getElementById("stat-expense").textContent = "₹" + expenses.toFixed(2);
+
+        const profitEl = document.getElementById("stat-profit");
+        profitEl.textContent = (profit >= 0 ? "₹" : "-₹") + Math.abs(profit).toFixed(2);
+        profitEl.style.color = profit >= 0 ? "#007bff" : "#dc3545";
+      } catch (err) {
+        console.error(err);
+        document.getElementById("stat-revenue").textContent = "Error";
+      }
+    }
+
+    // Add a new expense record
+    async function handleExpenseSubmit(e) {
+      e.preventDefault();
+      const amount = document.getElementById("expense-amount").value;
+      const date   = document.getElementById("expense-date").value;
+      if (!amount || !date) return;
+
+      const btn = document.getElementById("btn-expense-submit");
+      btn.disabled = true;
+      try {
+        await addExpense(amount, date); // script.js
+        showToast("Expense added!");
+        document.getElementById("expense-form").reset();
+        document.getElementById("expense-date").value = todayDateString();
+        await Promise.all([loadProfitStats(), loadExpenseList()]);
+      } catch (err) {
+        console.error(err);
+        showToast("Failed to add expense.", "error");
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
+    // Fetch and show recent expense records
+    async function loadExpenseList() {
+      const container = document.getElementById("expense-list");
+      container.innerHTML = `<p style="color:#aaa; font-size:.9rem;">Loading…</p>`;
+      try {
+        const snap = await db.collection("expenses").orderBy("createdAt", "desc").limit(20).get();
+        if (snap.empty) {
+          container.innerHTML = `<p style="color:#aaa; font-size:.9rem;">No expenses recorded yet.</p>`;
+          return;
+        }
+        container.innerHTML = "";
+        snap.forEach(doc => {
+          const d = doc.data();
+          const item = document.createElement("div");
+          item.className = "expense-item";
+          item.innerHTML = `
+            <span>📅 ${d.date || "—"}</span>
+            <strong>-₹${parseFloat(d.amount || 0).toFixed(2)}</strong>
+          `;
+          container.appendChild(item);
+        });
+      } catch (err) {
+        console.error(err);
+        container.innerHTML = `<p style="color:#dc3545; font-size:.9rem;">Failed to load expenses.</p>`;
+      }
+    }
+
+    // ════════════════════════════════════════════════════════
+    //  HELPERS
+    // ════════════════════════════════════════════════════════
+
+    // Returns today's date as "YYYY-MM-DD" for the date input default
+    function todayDateString() {
+      return new Date().toISOString().split("T")[0];
+    }
+
+    // Escape HTML entities to prevent XSS in innerHTML
+    function escapeHtml(str) {
+      return String(str)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
+    }
+
+    // Escape single quotes and backslashes for use in onclick attribute strings
+    function escapeAttr(str) {
+      return String(str)
+        .replace(/\\/g, "\\\\")
+        .replace(/'/g, "\\'");
+    }
+  </script>
+</body>
+</html>
