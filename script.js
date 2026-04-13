@@ -1,6 +1,7 @@
 // ============================================================
 // script.js — Shared Firebase config, utilities, and CRUD
-// Used by both index.html (customer) and admin.html (shopkeeper)
+// Multi-tenant SaaS: each shop is isolated by shopId (shopName slug)
+// Used by signup.html, login.html, index.html, admin.html
 // ============================================================
 
 // ── 1. FIREBASE CONFIGURATION ────────────────────────────────
@@ -28,48 +29,39 @@ if (firebaseConfig.apiKey === "YOUR_API_KEY") {
 if (!firebase.apps.length) {
   firebase.initializeApp(firebaseConfig);
 }
-const db = firebase.firestore();
+const db   = firebase.firestore();
+const auth = firebase.auth();
 
-// ── 2. SHOP CONFIGURATION ────────────────────────────────────
-// Replace with your WhatsApp phone number (with country code, no + or spaces)
-// Example for India: "919876543210" means +91 98765 43210
-const SHOP_WHATSAPP_NUMBER = "919876543210";
-
-// Display name shown in the customer-facing page header
-const SHOP_NAME = "My Kirana Shop";
-
-// ── 3. UTILITY FUNCTIONS ─────────────────────────────────────
+// ── 2. UTILITY FUNCTIONS ─────────────────────────────────────
 
 /**
  * Generate a cryptographically random 4-digit OTP (1000–9999).
- * Uses crypto.getRandomValues() which is available in all modern browsers.
  * @returns {string} 4-digit OTP as a string
  */
 function generateOTP() {
-  // getRandomValues fills a Uint32Array with cryptographically secure random values
   const arr = new Uint32Array(1);
   crypto.getRandomValues(arr);
-  // Map to range [1000, 9999]
   return (1000 + (arr[0] % 9000)).toString();
 }
 
 /**
  * Open WhatsApp with a pre-filled order message.
+ * @param {string} whatsappNumber  e.g. "919876543210"
  * @param {string} productName
  * @param {number} quantity
- * @param {number} totalPrice
+ * @param {number|string} totalPrice
  * @param {string} customerName
  * @param {string} otp
  */
-function sendWhatsApp(productName, quantity, totalPrice, customerName, otp) {
+function sendWhatsApp(whatsappNumber, productName, quantity, totalPrice, customerName, otp) {
   const message =
-    `New Order:\n` +
+    `Order:\n` +
     `Product: ${productName}\n` +
     `Qty: ${quantity}\n` +
     `Total: ₹${totalPrice}\n` +
     `Customer: ${customerName}\n` +
     `OTP: ${otp}`;
-  const url = `https://wa.me/${SHOP_WHATSAPP_NUMBER}?text=${encodeURIComponent(message)}`;
+  const url = `https://wa.me/${whatsappNumber}?text=${encodeURIComponent(message)}`;
   window.open(url, "_blank");
 }
 
@@ -112,25 +104,111 @@ function showToast(message, type = "success") {
   setTimeout(() => toast.remove(), 3000);
 }
 
-// ── 4. PRODUCT CRUD ──────────────────────────────────────────
+// ── 3. AUTH FUNCTIONS ────────────────────────────────────────
 
 /**
- * Fetch all products ordered by newest first.
+ * Sign up a new shopkeeper.
+ * Creates a Firebase Auth user and saves their shop profile in Firestore.
+ * @param {string} email
+ * @param {string} password
+ * @param {string} shopName  Unique slug (lowercase, no spaces)
+ * @param {string} whatsappNumber  e.g. "919876543210"
+ * @returns {Promise<firebase.auth.UserCredential>}
+ */
+async function signUpUser(email, password, shopName, whatsappNumber) {
+  // Check shopName uniqueness before creating auth user
+  const existing = await db.collection("shops")
+    .where("shopName", "==", shopName)
+    .limit(1)
+    .get();
+  if (!existing.empty) {
+    throw new Error("shop-name-taken");
+  }
+
+  const cred = await auth.createUserWithEmailAndPassword(email, password);
+  await db.collection("shops").doc(cred.user.uid).set({
+    userId: cred.user.uid,
+    shopName,
+    whatsappNumber: whatsappNumber.trim(),
+    createdAt: firebase.firestore.FieldValue.serverTimestamp()
+  });
+  return cred;
+}
+
+/**
+ * Sign in an existing shopkeeper.
+ * @param {string} email
+ * @param {string} password
+ * @returns {Promise<firebase.auth.UserCredential>}
+ */
+async function loginUser(email, password) {
+  return auth.signInWithEmailAndPassword(email, password);
+}
+
+/**
+ * Sign out the current user.
+ * @returns {Promise<void>}
+ */
+async function logoutUser() {
+  return auth.signOut();
+}
+
+/**
+ * Get the current authenticated user (or null).
+ * @returns {firebase.User|null}
+ */
+function getCurrentUser() {
+  return auth.currentUser;
+}
+
+/**
+ * Fetch a shop profile by the logged-in user's UID.
+ * @param {string} uid
+ * @returns {Promise<{shopName:string, whatsappNumber:string, createdAt:Timestamp}|null>}
+ */
+async function getShopByUserId(uid) {
+  const doc = await db.collection("shops").doc(uid).get();
+  return doc.exists ? { id: doc.id, ...doc.data() } : null;
+}
+
+/**
+ * Fetch a shop profile by shopName slug (for the public customer page).
+ * @param {string} shopName
+ * @returns {Promise<{shopName:string, whatsappNumber:string}|null>}
+ */
+async function getShopByName(shopName) {
+  const snap = await db.collection("shops")
+    .where("shopName", "==", shopName)
+    .limit(1)
+    .get();
+  if (snap.empty) return null;
+  return { id: snap.docs[0].id, ...snap.docs[0].data() };
+}
+
+// ── 4. PRODUCT CRUD (shopId-scoped) ──────────────────────────
+
+/**
+ * Fetch products for a specific shop, newest first.
+ * @param {string} shopId  The shopName slug
  * @returns {Promise<Array<{id:string, name:string, price:number, createdAt:Timestamp}>>}
  */
-async function getProducts() {
-  const snap = await db.collection("products").orderBy("createdAt", "desc").get();
+async function getProducts(shopId) {
+  const snap = await db.collection("products")
+    .where("shopId", "==", shopId)
+    .orderBy("createdAt", "desc")
+    .get();
   return snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 }
 
 /**
- * Add a new product to Firestore.
+ * Add a new product for a shop.
+ * @param {string} shopId
  * @param {string} name
  * @param {number|string} price
- * @returns {Promise<firebase.firestore.DocumentReference>}
  */
-async function addProduct(name, price) {
+async function addProduct(shopId, name, price) {
   return db.collection("products").add({
+    shopId,
     name: name.trim(),
     price: parseFloat(price),
     createdAt: firebase.firestore.FieldValue.serverTimestamp()
@@ -158,10 +236,11 @@ async function deleteProduct(id) {
   return db.collection("products").doc(id).delete();
 }
 
-// ── 5. ORDER CRUD ────────────────────────────────────────────
+// ── 5. ORDER CRUD (shopId-scoped) ────────────────────────────
 
 /**
- * Save a new order to Firestore.
+ * Save a new order for a shop.
+ * @param {string} shopId
  * @param {string} productName
  * @param {number} price  Unit price
  * @param {number|string} quantity
@@ -169,10 +248,11 @@ async function deleteProduct(id) {
  * @param {string} otp
  * @returns {Promise<number>} totalPrice
  */
-async function saveOrder(productName, price, quantity, customerName, otp) {
+async function saveOrder(shopId, productName, price, quantity, customerName, otp) {
   const qty = parseInt(quantity, 10);
   const totalPrice = parseFloat(price) * qty;
   await db.collection("orders").add({
+    shopId,
     productName,
     price: parseFloat(price),
     quantity: qty,
@@ -184,15 +264,32 @@ async function saveOrder(productName, price, quantity, customerName, otp) {
   return totalPrice;
 }
 
-// ── 6. EXPENSE & PROFIT ──────────────────────────────────────
+/**
+ * Fetch recent orders for a shop.
+ * @param {string} shopId
+ * @param {number} [limitCount=50]
+ * @returns {Promise<Array>}
+ */
+async function getOrders(shopId, limitCount = 50) {
+  const snap = await db.collection("orders")
+    .where("shopId", "==", shopId)
+    .orderBy("createdAt", "desc")
+    .limit(limitCount)
+    .get();
+  return snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+}
+
+// ── 6. EXPENSE & PROFIT (shopId-scoped) ──────────────────────
 
 /**
- * Add a daily expense record.
+ * Add a daily expense record for a shop.
+ * @param {string} shopId
  * @param {number|string} amount
  * @param {string} date  e.g. "2024-05-20"
  */
-async function addExpense(amount, date) {
+async function addExpense(shopId, amount, date) {
   return db.collection("expenses").add({
+    shopId,
     amount: parseFloat(amount),
     date,
     createdAt: firebase.firestore.FieldValue.serverTimestamp()
@@ -200,42 +297,40 @@ async function addExpense(amount, date) {
 }
 
 /**
- * Sum all order totalPrices (total revenue).
+ * Sum all order totalPrices for a shop (total revenue).
+ * @param {string} shopId
  * @returns {Promise<number>}
  */
-async function getTotalRevenue() {
-  const snap = await db.collection("orders").get();
+async function getTotalRevenue(shopId) {
+  const snap = await db.collection("orders").where("shopId", "==", shopId).get();
   let total = 0;
   snap.forEach(doc => { total += doc.data().totalPrice || 0; });
   return total;
 }
 
 /**
- * Sum all expense amounts.
+ * Sum all expense amounts for a shop.
+ * @param {string} shopId
  * @returns {Promise<number>}
  */
-async function getTotalExpenses() {
-  const snap = await db.collection("expenses").get();
+async function getTotalExpenses(shopId) {
+  const snap = await db.collection("expenses").where("shopId", "==", shopId).get();
   let total = 0;
   snap.forEach(doc => { total += doc.data().amount || 0; });
   return total;
 }
 
-// ── 7. BONUS: Auto-delete orders older than 30 days ──────────
-// Uncomment and call this function from admin.html to clean up old orders.
-// For production, use Firebase Cloud Functions + a scheduled trigger instead.
-/*
-async function deleteOldOrders() {
-  const thirtyDaysAgo = new Date();
-  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-
-  const oldOrders = await db.collection("orders")
-    .where("createdAt", "<", thirtyDaysAgo)
+/**
+ * Fetch recent expenses for a shop.
+ * @param {string} shopId
+ * @param {number} [limitCount=20]
+ * @returns {Promise<Array>}
+ */
+async function getExpenses(shopId, limitCount = 20) {
+  const snap = await db.collection("expenses")
+    .where("shopId", "==", shopId)
+    .orderBy("createdAt", "desc")
+    .limit(limitCount)
     .get();
-
-  const batch = db.batch();
-  oldOrders.forEach(doc => batch.delete(doc.ref));
-  await batch.commit();
-  console.log(`Deleted ${oldOrders.size} orders older than 30 days.`);
+  return snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 }
-*/

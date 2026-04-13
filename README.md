@@ -1,6 +1,9 @@
 # Fera Shopkeeper Web
 
-A simple SaaS web app for shopkeepers built with HTML, CSS, Vanilla JavaScript, and Firebase.
+A multi-tenant SaaS web app for shopkeepers built with HTML, CSS, Vanilla JavaScript, and Firebase.
+
+Each shopkeeper registers an account, gets their own shop profile, and a unique public URL at:
+`yourapp.web.app/index.html?shop=yourshopname`
 
 ---
 
@@ -8,10 +11,13 @@ A simple SaaS web app for shopkeepers built with HTML, CSS, Vanilla JavaScript, 
 
 | Feature | Description |
 |---|---|
-| 📦 Product Management | Add, edit, and delete products (stored in Firestore) |
+| 🔐 Authentication | Email/password sign-up and login (Firebase Auth) |
+| 🏪 Multi-tenant | Each shop is isolated by shopName slug |
+| 📦 Product Management | Add, edit, and delete products (scoped to shop) |
 | 🛒 Customer Order Page | Public product listing with order modal |
 | 🔑 OTP Verification | 4-digit OTP generated per order |
 | 📲 WhatsApp Integration | Order details sent via WhatsApp link |
+| 📋 Orders Dashboard | View all orders in the admin panel |
 | 📊 Profit Tracker | Track daily expenses and calculate net profit |
 | 📱 Mobile-Friendly | Responsive design, no frameworks |
 
@@ -21,11 +27,28 @@ A simple SaaS web app for shopkeepers built with HTML, CSS, Vanilla JavaScript, 
 
 ```
 fera-shopkeeperweb/
-├── index.html     ← Customer-facing product & order page
-├── admin.html     ← Shopkeeper admin panel
-├── script.js      ← Shared Firebase config, utilities, CRUD functions
+├── signup.html    ← Shopkeeper registration page
+├── login.html     ← Shopkeeper login page
+├── index.html     ← Customer-facing product & order page (public, ?shop=slug)
+├── admin.html     ← Shopkeeper admin dashboard (auth required)
+├── script.js      ← Shared Firebase config, auth, utilities, CRUD functions
 ├── firebase.json  ← Firebase Hosting configuration
 └── README.md
+```
+
+---
+
+## How Multi-Tenancy Works
+
+- Each shopkeeper signs up with a unique **shop name slug** (e.g. `rahulstore`)
+- All data (products, orders, expenses) is stored in Firestore with a `shopId` field = the shop name slug
+- The customer page reads `?shop=rahulstore` from the URL and loads only that shop's products
+- The admin page reads the logged-in user's shop profile from Firestore to scope all operations
+
+### Public shop URL format
+
+```
+https://YOUR_PROJECT_ID.web.app/index.html?shop=rahulstore
 ```
 
 ---
@@ -35,24 +58,30 @@ fera-shopkeeperweb/
 ### 1. Create a Firebase Project
 
 1. Go to [Firebase Console](https://console.firebase.google.com/) and click **Add project**.
-2. Give your project a name, follow the steps, and click **Create project**.
+2. Give your project a name and click **Create project**.
 
-### 2. Enable Firestore
+### 2. Enable Firebase Authentication
+
+1. In the Firebase Console, go to **Build → Authentication**.
+2. Click **Get started**.
+3. Under **Sign-in method**, enable **Email/Password**.
+
+### 3. Enable Firestore
 
 1. In the Firebase Console, go to **Build → Firestore Database**.
 2. Click **Create database** → choose **Start in test mode** temporarily (for initial development only).
 
-> ⚠️ **Important**: Test mode allows **unrestricted read/write access to everyone**. Do **NOT** leave test mode rules in place before sharing the URL or adding any real data. Follow the Firestore Security Rules section below to restrict access immediately.
+> ⚠️ **Important**: Test mode allows unrestricted read/write access. Apply Security Rules (see below) before sharing the URL.
 
 3. Select a region and click **Enable**.
 
-### 3. Register a Web App
+### 4. Register a Web App
 
 1. In the Firebase Console, go to **Project Settings** (⚙️ gear icon).
 2. Under **Your apps**, click the **</>** (Web) icon.
 3. Register the app. Copy the `firebaseConfig` object shown.
 
-### 4. Configure `script.js`
+### 5. Configure `script.js`
 
 Open `script.js` and replace the placeholder values with your Firebase config:
 
@@ -67,17 +96,19 @@ const firebaseConfig = {
 };
 ```
 
-Also update the WhatsApp number and shop name:
+### 6. Create Firestore Indexes
 
-```js
-// Phone number with country code, no + or spaces
-// Example: India +91 98765 43210 → "919876543210"
-const SHOP_WHATSAPP_NUMBER = "919876543210";
+Some queries require composite indexes. Go to **Firestore → Indexes** and create:
 
-const SHOP_NAME = "My Kirana Shop";
-```
+| Collection | Fields | Order |
+|---|---|---|
+| `products` | `shopId` ASC, `createdAt` DESC | Composite |
+| `orders` | `shopId` ASC, `createdAt` DESC | Composite |
+| `expenses` | `shopId` ASC, `createdAt` DESC | Composite |
 
-### 5. Deploy to Firebase Hosting
+> Firebase will also automatically prompt you to create missing indexes when you first run queries — click the link in the browser console error.
+
+### 7. Deploy to Firebase Hosting
 
 ```bash
 # Install Firebase CLI globally (one-time)
@@ -104,38 +135,58 @@ Your app will be live at `https://YOUR_PROJECT_ID.web.app`.
 
 | Collection | Fields |
 |---|---|
-| `products` | `name`, `price`, `createdAt` |
-| `orders` | `productName`, `price`, `quantity`, `totalPrice`, `customerName`, `otp`, `createdAt` |
-| `expenses` | `amount`, `date`, `createdAt` |
+| `shops` | `userId`, `shopName` (unique slug), `whatsappNumber`, `createdAt` |
+| `products` | `shopId`, `name`, `price`, `createdAt` |
+| `orders` | `shopId`, `productName`, `price`, `quantity`, `totalPrice`, `customerName`, `otp`, `createdAt` |
+| `expenses` | `shopId`, `amount`, `date`, `createdAt` |
 
 ---
 
-## Firestore Security Rules (recommended before going live)
+## Firestore Security Rules
 
-Replace the default test-mode rules with:
+Replace the default test-mode rules with these before going live:
 
 ```
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Anyone can read products and create orders
+
+    // Shops: only the owner can read/write their own shop document
+    match /shops/{uid} {
+      allow read: if true;  // public for shop lookup by customers
+      allow write: if request.auth != null && request.auth.uid == uid;
+    }
+
+    // Products: anyone can read; only the shop owner can write
     match /products/{id} {
       allow read: if true;
-      allow write: if false; // Protect writes — use admin SDK or auth
+      allow create: if request.auth != null
+        && exists(/databases/$(database)/documents/shops/$(request.auth.uid))
+        && request.resource.data.shopId ==
+           get(/databases/$(database)/documents/shops/$(request.auth.uid)).data.shopName;
+      allow update, delete: if request.auth != null
+        && resource.data.shopId ==
+           get(/databases/$(database)/documents/shops/$(request.auth.uid)).data.shopName;
     }
+
+    // Orders: anyone can create; only the shop owner can read
     match /orders/{id} {
       allow create: if true;
-      allow read, update, delete: if false;
+      allow read: if request.auth != null
+        && resource.data.shopId ==
+           get(/databases/$(database)/documents/shops/$(request.auth.uid)).data.shopName;
+      allow update, delete: if false;
     }
-    // Expenses are private — lock down completely
+
+    // Expenses: only the shop owner
     match /expenses/{id} {
-      allow read, write: if false;
+      allow read, write: if request.auth != null
+        && (resource == null || resource.data.shopId ==
+           get(/databases/$(database)/documents/shops/$(request.auth.uid)).data.shopName);
     }
   }
 }
 ```
-
-> For a fully secure setup, add **Firebase Authentication** and restrict write access to authenticated admin users.
 
 ---
 
@@ -143,11 +194,7 @@ service cloud.firestore {
 
 | URL | Description |
 |---|---|
-| `/index.html` | Customer product listing and ordering page |
-| `/admin.html` | Shopkeeper admin panel (products + profit tracker) |
-
----
-
-## Bonus: Auto-delete old orders
-
-The `script.js` file contains a commented-out `deleteOldOrders()` function. For production, use a **Firebase Cloud Function** with a scheduled trigger (Pub/Sub + Cloud Scheduler) to automatically delete orders older than 30 days.
+| `/signup.html` | Shopkeeper registration (create shop account) |
+| `/login.html` | Shopkeeper login |
+| `/admin.html` | Shopkeeper admin dashboard (auth required) |
+| `/index.html?shop=yourshop` | Customer product listing and ordering page |

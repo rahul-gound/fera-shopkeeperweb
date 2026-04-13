@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Admin Panel — Shopkeeper</title>
+  <title>Admin Panel — Fera Shopkeeper</title>
   <style>
     /* ── Reset & Base ── */
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -191,19 +191,86 @@
     .expense-item span { color: #555; }
     .expense-item strong { color: #dc3545; }
 
+    /* ── Auth loading overlay ── */
+    #auth-loading {
+      position: fixed; inset: 0;
+      background: #f0f4f8;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 9999;
+      font-size: 1.1rem;
+      color: #555;
+      gap: 12px;
+    }
+
+    /* ── Shop info banner ── */
+    .shop-banner {
+      background: #e8f5e9;
+      border: 1px solid #c8e6c9;
+      border-radius: 10px;
+      padding: 14px 18px;
+      margin-bottom: 24px;
+      font-size: .9rem;
+      color: #2e7d32;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 12px;
+    }
+    .shop-banner strong { font-size: 1rem; }
+    .shop-banner a {
+      color: #28a745;
+      font-weight: 600;
+      text-decoration: none;
+    }
+    .shop-banner a:hover { text-decoration: underline; }
+
+    /* ── Orders table ── */
+    .order-badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 12px;
+      font-size: .78rem;
+      font-weight: 700;
+      background: #e8f5e9;
+      color: #28a745;
+    }
+
     /* Toast animation */
     @keyframes fadein { from { opacity: 0; transform: translateX(-50%) translateY(10px); } }
   </style>
 </head>
 <body>
 
+  <!-- ── AUTH LOADING ── -->
+  <div id="auth-loading">
+    <div class="spinner" style="display:inline-block;width:28px;height:28px;border:3px solid #ddd;border-top-color:#28a745;border-radius:50%;animation:spin .7s linear infinite;"></div>
+    Checking authentication…
+  </div>
+
   <!-- ── HEADER ── -->
   <header>
-    <h1>🏪 Admin Panel</h1>
-    <a href="index.html">← Customer Page</a>
+    <h1>🏪 Admin Panel — <span id="header-shop-name">…</span></h1>
+    <div style="display:flex;gap:10px;align-items:center;">
+      <a href="#" id="btn-view-shop" target="_blank" style="display:none;">🌐 View Shop</a>
+      <button
+        onclick="handleLogout()"
+        style="background:none;border:1px solid #6c757d;color:#adb5bd;padding:6px 14px;border-radius:6px;cursor:pointer;font-size:.9rem;transition:color .2s,border-color .2s;"
+        onmouseover="this.style.color='#fff';this.style.borderColor='#adb5bd';"
+        onmouseout="this.style.color='#adb5bd';this.style.borderColor='#6c757d';">
+        🚪 Logout
+      </button>
+    </div>
   </header>
 
   <main>
+
+    <!-- Shop info banner -->
+    <div class="shop-banner" id="shop-banner" style="display:none;">
+      <span>🏪 <strong id="banner-shop-name">…</strong></span>
+      <span>Public URL: <a id="banner-shop-url" href="#" target="_blank">…</a></span>
+    </div>
 
     <!-- ══════════════════════════════════════════════════════════
          SECTION 1 — PRODUCT MANAGEMENT
@@ -334,28 +401,110 @@
       </div>
     </div>
 
+    <!-- ══════════════════════════════════════════════════════════
+         SECTION 3 — ORDERS
+         ══════════════════════════════════════════════════════════ -->
+    <div class="card">
+      <div class="card-title" style="display:flex;align-items:center;justify-content:space-between;">
+        <span>📋 Recent Orders</span>
+        <button class="btn btn-secondary btn-sm" onclick="loadOrders()">🔄 Refresh</button>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Product</th>
+              <th>Customer</th>
+              <th>Qty</th>
+              <th>Total (₹)</th>
+              <th>OTP</th>
+              <th>Date</th>
+            </tr>
+          </thead>
+          <tbody id="orders-tbody">
+            <tr class="empty-row">
+              <td colspan="7"><span class="spinner"></span> Loading orders…</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
   </main>
 
   <!-- ── FIREBASE SDKs ── -->
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>
   <script src="script.js"></script>
 
   <!-- ── PAGE SCRIPT ── -->
   <script>
 
     // ── State ──────────────────────────────────────────────
+    let currentShop        = null; // { shopName, whatsappNumber, … }
     let editingProductId   = null; // null = add mode; string = edit mode
     let allProducts        = [];   // cached product list
 
-    // ── On page load ───────────────────────────────────────
-    document.addEventListener("DOMContentLoaded", () => {
-      // Default expense date to today
-      document.getElementById("expense-date").value = todayDateString();
-      loadAdminProducts();
-      loadProfitStats();
-      loadExpenseList();
+    // ── Auth guard ─────────────────────────────────────────
+    auth.onAuthStateChanged(async user => {
+      if (!user) {
+        window.location.href = "login.html";
+        return;
+      }
+
+      try {
+        currentShop = await getShopByUserId(user.uid);
+        if (!currentShop) {
+          showToast("Shop profile not found. Please contact support.", "error");
+          await logoutUser();
+          window.location.href = "login.html";
+          return;
+        }
+
+        // Populate shop info in UI
+        const shopName = currentShop.shopName;
+        const publicUrl = `${window.location.origin}/index.html?shop=${encodeURIComponent(shopName)}`;
+
+        document.getElementById("header-shop-name").textContent = shopName;
+        document.getElementById("banner-shop-name").textContent = shopName;
+        document.getElementById("banner-shop-url").textContent  = publicUrl;
+        document.getElementById("banner-shop-url").href         = publicUrl;
+
+        const viewLink = document.getElementById("btn-view-shop");
+        viewLink.href        = publicUrl;
+        viewLink.style.display = "inline-block";
+
+        document.getElementById("shop-banner").style.display = "flex";
+
+        document.title = `Admin — ${shopName}`;
+
+        // Hide loading overlay and show page
+        document.getElementById("auth-loading").style.display = "none";
+
+        // Load all data
+        document.getElementById("expense-date").value = todayDateString();
+        loadAdminProducts();
+        loadProfitStats();
+        loadExpenseList();
+        loadOrders();
+      } catch (err) {
+        console.error("Failed to load shop profile:", err);
+        showToast("Failed to load shop data. Please try again.", "error");
+        document.getElementById("auth-loading").style.display = "none";
+      }
     });
+
+    // ── Logout ─────────────────────────────────────────────
+    async function handleLogout() {
+      try {
+        await logoutUser();
+        window.location.href = "login.html";
+      } catch (err) {
+        showToast("Logout failed. Try again.", "error");
+      }
+    }
 
     // ════════════════════════════════════════════════════════
     //  PRODUCT MANAGEMENT
@@ -368,7 +517,7 @@
         <span class="spinner"></span> Loading…</td></tr>`;
 
       try {
-        allProducts = await getProducts(); // script.js
+        allProducts = await getProducts(currentShop.shopName); // script.js
 
         if (allProducts.length === 0) {
           tbody.innerHTML = `<tr class="empty-row">
@@ -424,13 +573,11 @@
 
       try {
         if (editingProductId) {
-          // UPDATE existing product
           await updateProduct(editingProductId, name, price); // script.js
           showToast("Product updated!");
           cancelEdit();
         } else {
-          // ADD new product
-          await addProduct(name, price); // script.js
+          await addProduct(currentShop.shopName, name, price); // script.js
           showToast("Product added!");
           document.getElementById("product-form").reset();
         }
@@ -452,7 +599,6 @@
       document.getElementById("btn-cancel-edit").style.display  = "inline-block";
       document.getElementById("product-name").focus();
 
-      // Highlight the row being edited
       document.querySelectorAll("tbody tr").forEach(r => r.classList.remove("editing-row"));
       const row = document.getElementById("row-" + id);
       if (row) row.classList.add("editing-row");
@@ -483,6 +629,45 @@
     }
 
     // ════════════════════════════════════════════════════════
+    //  ORDERS
+    // ════════════════════════════════════════════════════════
+
+    async function loadOrders() {
+      const tbody = document.getElementById("orders-tbody");
+      tbody.innerHTML = `<tr class="empty-row"><td colspan="7">
+        <span class="spinner"></span> Loading…</td></tr>`;
+
+      try {
+        const orders = await getOrders(currentShop.shopName, 50); // script.js
+
+        if (orders.length === 0) {
+          tbody.innerHTML = `<tr class="empty-row">
+            <td colspan="7">No orders yet.</td></tr>`;
+          return;
+        }
+
+        tbody.innerHTML = "";
+        orders.forEach((o, i) => {
+          const tr = document.createElement("tr");
+          tr.innerHTML = `
+            <td>${i + 1}</td>
+            <td>${escapeHtml(o.productName || "—")}</td>
+            <td>${escapeHtml(o.customerName || "—")}</td>
+            <td>${o.quantity || "—"}</td>
+            <td>₹${parseFloat(o.totalPrice || 0).toFixed(2)}</td>
+            <td><span class="order-badge">${escapeHtml(o.otp || "—")}</span></td>
+            <td>${formatDate(o.createdAt)}</td>
+          `;
+          tbody.appendChild(tr);
+        });
+      } catch (err) {
+        console.error(err);
+        tbody.innerHTML = `<tr class="empty-row">
+          <td colspan="7" style="color:#dc3545">Failed to load orders.</td></tr>`;
+      }
+    }
+
+    // ════════════════════════════════════════════════════════
     //  PROFIT TRACKER
     // ════════════════════════════════════════════════════════
 
@@ -494,8 +679,8 @@
 
       try {
         const [revenue, expenses] = await Promise.all([
-          getTotalRevenue(),   // script.js
-          getTotalExpenses()   // script.js
+          getTotalRevenue(currentShop.shopName),  // script.js
+          getTotalExpenses(currentShop.shopName)  // script.js
         ]);
         const profit = revenue - expenses;
 
@@ -521,7 +706,7 @@
       const btn = document.getElementById("btn-expense-submit");
       btn.disabled = true;
       try {
-        await addExpense(amount, date); // script.js
+        await addExpense(currentShop.shopName, amount, date); // script.js
         showToast("Expense added!");
         document.getElementById("expense-form").reset();
         document.getElementById("expense-date").value = todayDateString();
@@ -539,14 +724,13 @@
       const container = document.getElementById("expense-list");
       container.innerHTML = `<p style="color:#aaa; font-size:.9rem;">Loading…</p>`;
       try {
-        const snap = await db.collection("expenses").orderBy("createdAt", "desc").limit(20).get();
-        if (snap.empty) {
+        const expenses = await getExpenses(currentShop.shopName, 20); // script.js
+        if (expenses.length === 0) {
           container.innerHTML = `<p style="color:#aaa; font-size:.9rem;">No expenses recorded yet.</p>`;
           return;
         }
         container.innerHTML = "";
-        snap.forEach(doc => {
-          const d = doc.data();
+        expenses.forEach(d => {
           const item = document.createElement("div");
           item.className = "expense-item";
           item.innerHTML = `
