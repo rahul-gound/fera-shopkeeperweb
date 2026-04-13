@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Log In — Fera Shopkeeper</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Segoe UI', Arial, sans-serif;
+      background: linear-gradient(135deg, #f0f4f8, #dce8f5);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px 16px;
+    }
+
+    .auth-card {
+      background: #fff;
+      border-radius: 18px;
+      padding: 36px 32px;
+      width: 100%;
+      max-width: 420px;
+      box-shadow: 0 8px 32px rgba(0,0,0,.12);
+    }
+
+    .auth-logo {
+      text-align: center;
+      font-size: 2.4rem;
+      margin-bottom: 6px;
+    }
+    .auth-title {
+      text-align: center;
+      font-size: 1.5rem;
+      font-weight: 700;
+      color: #222;
+      margin-bottom: 4px;
+    }
+    .auth-sub {
+      text-align: center;
+      font-size: .9rem;
+      color: #888;
+      margin-bottom: 28px;
+    }
+
+    .form-group {
+      margin-bottom: 18px;
+    }
+    .form-group label {
+      display: block;
+      font-size: .88rem;
+      font-weight: 600;
+      color: #555;
+      margin-bottom: 6px;
+    }
+    .form-group input {
+      width: 100%;
+      padding: 12px 14px;
+      border: 1.5px solid #ddd;
+      border-radius: 9px;
+      font-size: 1rem;
+      outline: none;
+      transition: border-color .2s;
+    }
+    .form-group input:focus { border-color: #28a745; }
+
+    .field-error {
+      font-size: .8rem;
+      color: #dc3545;
+      margin-top: 5px;
+      display: none;
+    }
+
+    .btn-submit {
+      width: 100%;
+      padding: 13px;
+      background: #28a745;
+      color: #fff;
+      border: none;
+      border-radius: 9px;
+      font-size: 1rem;
+      font-weight: 700;
+      cursor: pointer;
+      transition: background .2s, transform .1s;
+      margin-top: 4px;
+    }
+    .btn-submit:hover  { background: #218838; }
+    .btn-submit:active { transform: scale(.98); }
+    .btn-submit:disabled { background: #94d4a7; cursor: not-allowed; }
+
+    .auth-switch {
+      text-align: center;
+      margin-top: 22px;
+      font-size: .9rem;
+      color: #666;
+    }
+    .auth-switch a {
+      color: #28a745;
+      font-weight: 600;
+      text-decoration: none;
+    }
+    .auth-switch a:hover { text-decoration: underline; }
+
+    @keyframes fadein { from { opacity: 0; transform: translateX(-50%) translateY(10px); } }
+  </style>
+</head>
+<body>
+
+  <div class="auth-card">
+    <div class="auth-logo">🔑</div>
+    <h1 class="auth-title">Welcome Back</h1>
+    <p class="auth-sub">Log in to manage your shop</p>
+
+    <form id="login-form" onsubmit="handleLogin(event)" novalidate>
+
+      <div class="form-group">
+        <label for="email">Email Address</label>
+        <input type="email" id="email" placeholder="you@example.com" required />
+        <p class="field-error" id="err-email">Please enter your email.</p>
+      </div>
+
+      <div class="form-group">
+        <label for="password">Password</label>
+        <input type="password" id="password" placeholder="Your password" required />
+        <p class="field-error" id="err-password">Please enter your password.</p>
+      </div>
+
+      <button type="submit" class="btn-submit" id="btn-login">
+        🔓 Log In
+      </button>
+    </form>
+
+    <div class="auth-switch">
+      Don't have an account? <a href="signup.html">Create Your Shop</a>
+    </div>
+  </div>
+
+  <!-- Appwrite Web SDK (IIFE build — exposes global `Appwrite` object) -->
+  <script src="https://cdn.jsdelivr.net/npm/appwrite@15.0.0/dist/iife/sdk.js"></script>
+  <script src="script.js"></script>
+
+  <script>
+    // Redirect already-logged-in users to admin
+    account.get().then(() => {
+      window.location.href = "admin.html";
+    }).catch(() => { /* not logged in — show the form */ });
+
+    function showFieldError(id, show) {
+      document.getElementById(id).style.display = show ? "block" : "none";
+    }
+
+    async function handleLogin(e) {
+      e.preventDefault();
+      const email    = document.getElementById("email").value.trim();
+      const password = document.getElementById("password").value;
+
+      let valid = true;
+      if (!email) { showFieldError("err-email", true); valid = false; }
+      else         { showFieldError("err-email", false); }
+
+      if (!password) { showFieldError("err-password", true); valid = false; }
+      else            { showFieldError("err-password", false); }
+
+      if (!valid) return;
+
+      const btn = document.getElementById("btn-login");
+      btn.disabled = true;
+      btn.textContent = "Logging in…";
+
+      try {
+        await loginUser(email, password);
+        window.location.href = "admin.html";
+      } catch (err) {
+        btn.disabled = false;
+        btn.textContent = "🔓 Log In";
+
+        if (err.code === 401) {
+          // Appwrite code 401 = invalid credentials (wrong email or password)
+          showToast("Invalid email or password. Please try again.", "error");
+        } else if (err.code === 429) {
+          // Appwrite code 429 = rate limit exceeded
+          showToast("Too many attempts. Please wait a moment and try again.", "error");
+        } else {
+          showToast("Login failed: " + (err.message || "Unknown error"), "error");
+        }
+      }
+    }
+  </script>
+</body>
+</html>

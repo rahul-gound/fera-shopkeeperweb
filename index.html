@@ -264,7 +264,7 @@
     </div>
   </main>
 
-  <footer>Powered by Firebase &amp; WhatsApp</footer>
+  <footer>Powered by Appwrite &amp; WhatsApp</footer>
 
   <!-- ── ORDER MODAL ── -->
   <div class="modal-overlay" id="order-modal">
@@ -309,22 +309,53 @@
     </div>
   </div>
 
-  <!-- ── FIREBASE SDKs (loaded before script.js) ── -->
-  <!-- Using Firebase 9 "compat" mode so syntax matches Firestore v8 tutorials -->
-  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
+  <!-- ── APPWRITE SDK (loaded before script.js) ── -->
+  <script src="https://cdn.jsdelivr.net/npm/appwrite@15.0.0/dist/iife/sdk.js"></script>
   <script src="script.js"></script>
 
   <!-- ── PAGE SCRIPT ── -->
   <script>
     // ── State ──────────────────────────────────────────────
     let currentProduct = null; // product selected for ordering
+    let shopProfile    = null; // { shopName, whatsappNumber, … }
 
     // ── On page load ───────────────────────────────────────
-    document.addEventListener("DOMContentLoaded", () => {
-      // Set shop name from shared config (script.js)
-      document.getElementById("shop-header-name").textContent = "🛒 " + SHOP_NAME;
-      document.title = SHOP_NAME + " — Order Products";
+    document.addEventListener("DOMContentLoaded", async () => {
+      // Read the shop slug from ?shop=xxx URL parameter
+      const params   = new URLSearchParams(window.location.search);
+      const shopSlug = (params.get("shop") || "").toLowerCase().trim();
+
+      if (!shopSlug) {
+        document.getElementById("shop-header-name").textContent = "🛒 Shop Not Found";
+        document.title = "Shop Not Found";
+        document.getElementById("products-grid").innerHTML =
+          `<p id="empty-msg" style="color:#dc3545">
+            No shop specified. Please use a valid shop URL (e.g. ?shop=yourshop).
+          </p>`;
+        return;
+      }
+
+      // Fetch the shop profile
+      try {
+        shopProfile = await getShopByName(shopSlug);
+      } catch (err) {
+        console.error("Failed to fetch shop profile:", err);
+      }
+
+      if (!shopProfile) {
+        document.getElementById("shop-header-name").textContent = "🛒 Shop Not Found";
+        document.title = "Shop Not Found";
+        document.getElementById("products-grid").innerHTML =
+          `<p id="empty-msg" style="color:#dc3545">
+            Shop "<strong>${escapeHtml(shopSlug)}</strong>" does not exist.
+          </p>`;
+        return;
+      }
+
+      // Update UI with real shop name
+      document.getElementById("shop-header-name").textContent = "🛒 " + shopProfile.shopName;
+      document.title = shopProfile.shopName + " — Order Products";
+
       loadProducts();
     });
 
@@ -332,7 +363,7 @@
     async function loadProducts() {
       const grid = document.getElementById("products-grid");
       try {
-        const products = await getProducts(); // defined in script.js
+        const products = await getProducts(shopProfile.shopName); // defined in script.js
 
         grid.innerHTML = ""; // clear spinner
 
@@ -347,7 +378,7 @@
           card.innerHTML = `
             <h3>${escapeHtml(p.name)}</h3>
             <div class="price">₹${parseFloat(p.price).toFixed(2)}</div>
-            <button class="btn-order" onclick="openOrderModal('${p.id}', '${escapeAttr(p.name)}', ${parseFloat(p.price)})">
+            <button class="btn-order" onclick="openOrderModal('${p.$id}', '${escapeAttr(p.name)}', ${parseFloat(p.price)})">
               🛍️ Order
             </button>
           `;
@@ -410,7 +441,8 @@
 
       try {
         const otp = generateOTP(); // from script.js
-        await saveOrder(            // from script.js
+        await saveOrder(           // from script.js
+          shopProfile.shopName,
           currentProduct.name,
           currentProduct.price,
           qty,
@@ -440,8 +472,9 @@
 
     // ── Send WhatsApp message ───────────────────────────────
     function sendOrderWhatsApp() {
-      if (!currentProduct) return;
+      if (!currentProduct || !shopProfile) return;
       sendWhatsApp(              // from script.js
+        shopProfile.whatsappNumber,
         currentProduct.name,
         currentProduct._qty,
         currentProduct._totalPrice,

@@ -1,87 +1,96 @@
 // ============================================================
-// script.js — Shared Firebase config, utilities, and CRUD
-// Used by both index.html (customer) and admin.html (shopkeeper)
+// script.js — Appwrite config, utilities, and CRUD functions
+// Multi-tenant SaaS: each shop is isolated by shopId (shopName slug)
+// Used by signup.html, login.html, index.html, admin.html
 // ============================================================
 
-// ── 1. FIREBASE CONFIGURATION ────────────────────────────────
-// Go to Firebase Console → Your Project → Project Settings
-// → Your Apps → Web App → copy the config object below
-const firebaseConfig = {
-  apiKey: "YOUR_API_KEY",
-  authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
-  projectId: "YOUR_PROJECT_ID",
-  storageBucket: "YOUR_PROJECT_ID.appspot.com",
-  messagingSenderId: "YOUR_MESSAGING_SENDER_ID",
-  appId: "YOUR_APP_ID"
-};
+// ── 1. APPWRITE CONFIGURATION ────────────────────────────────
+// Replace these values with your own Appwrite project settings.
+// See README.md for step-by-step setup instructions.
+//
+// NOTE: These IDs are visible to anyone who views the page source.
+// Security relies entirely on the collection-level permissions configured
+// in the Appwrite console. Make sure all collections have the correct
+// read/write permissions set (see README.md → Step 4).
+const APPWRITE_ENDPOINT   = "https://cloud.appwrite.io/v1"; // Appwrite Cloud endpoint
+const APPWRITE_PROJECT_ID = "YOUR_PROJECT_ID";              // Project ID from Appwrite console
+const DATABASE_ID         = "YOUR_DATABASE_ID";             // Database ID from Appwrite console
 
-// Guard: warn loudly if the developer forgot to replace placeholders
-if (firebaseConfig.apiKey === "YOUR_API_KEY") {
+// Collection IDs — must match exactly what you created in the Appwrite console
+const COLLECTION_SHOPS    = "shops";
+const COLLECTION_PRODUCTS = "products";
+const COLLECTION_ORDERS   = "orders";
+const COLLECTION_EXPENSES = "expenses";
+
+// Warn if the developer forgot to replace placeholder values
+if (APPWRITE_PROJECT_ID === "YOUR_PROJECT_ID") {
   console.error(
-    "[Setup required] Firebase is not configured.\n" +
-    "Open script.js and replace the placeholder values with your real Firebase project config.\n" +
+    "[Setup required] Appwrite is not configured.\n" +
+    "Open script.js and replace the placeholder values.\n" +
     "See README.md for step-by-step instructions."
   );
 }
 
-// Initialize Firebase (only once, guard against double-init)
-if (!firebase.apps.length) {
-  firebase.initializeApp(firebaseConfig);
-}
-const db = firebase.firestore();
+// ── 2. INITIALIZE APPWRITE SDK ───────────────────────────────
+// The Appwrite SDK is loaded via CDN (see <script> tag in each HTML file).
+// After loading, it exposes a global `Appwrite` object we destructure here.
+const { Client, Account, Databases, ID, Query } = Appwrite;
 
-// ── 2. SHOP CONFIGURATION ────────────────────────────────────
-// Replace with your WhatsApp phone number (with country code, no + or spaces)
-// Example for India: "919876543210" means +91 98765 43210
-const SHOP_WHATSAPP_NUMBER = "919876543210";
+// Create and configure the shared Appwrite client
+const client = new Client()
+  .setEndpoint(APPWRITE_ENDPOINT)   // API endpoint
+  .setProject(APPWRITE_PROJECT_ID); // Project ID
 
-// Display name shown in the customer-facing page header
-const SHOP_NAME = "My Kirana Shop";
+// Initialize the two services used across all pages
+const account   = new Account(client);   // Authentication
+const databases = new Databases(client); // Database CRUD
 
 // ── 3. UTILITY FUNCTIONS ─────────────────────────────────────
 
 /**
  * Generate a cryptographically random 4-digit OTP (1000–9999).
- * Uses crypto.getRandomValues() which is available in all modern browsers.
- * @returns {string} 4-digit OTP as a string
+ * @returns {string} 4-digit OTP string
  */
 function generateOTP() {
-  // getRandomValues fills a Uint32Array with cryptographically secure random values
   const arr = new Uint32Array(1);
   crypto.getRandomValues(arr);
-  // Map to range [1000, 9999]
   return (1000 + (arr[0] % 9000)).toString();
 }
 
 /**
  * Open WhatsApp with a pre-filled order message.
+ * @param {string} whatsappNumber  Digits only, e.g. "919876543210" (no + or spaces)
  * @param {string} productName
  * @param {number} quantity
- * @param {number} totalPrice
+ * @param {number|string} totalPrice
  * @param {string} customerName
  * @param {string} otp
  */
-function sendWhatsApp(productName, quantity, totalPrice, customerName, otp) {
+function sendWhatsApp(whatsappNumber, productName, quantity, totalPrice, customerName, otp) {
+  if (!whatsappNumber || !/^[0-9]{7,15}$/.test(whatsappNumber)) {
+    alert("WhatsApp number is not configured for this shop. Please contact the shopkeeper.");
+    return;
+  }
   const message =
-    `New Order:\n` +
+    `Order:\n` +
     `Product: ${productName}\n` +
     `Qty: ${quantity}\n` +
     `Total: ₹${totalPrice}\n` +
     `Customer: ${customerName}\n` +
     `OTP: ${otp}`;
-  const url = `https://wa.me/${SHOP_WHATSAPP_NUMBER}?text=${encodeURIComponent(message)}`;
+  const url = `https://wa.me/${whatsappNumber}?text=${encodeURIComponent(message)}`;
   window.open(url, "_blank");
 }
 
 /**
- * Format a Firestore Timestamp or JS Date into a readable string.
- * @param {firebase.firestore.Timestamp|Date|null} timestamp
+ * Format an ISO date string (Appwrite's built-in $createdAt field) into a
+ * readable local date. Appwrite stores timestamps as ISO 8601 strings.
+ * @param {string|null} isoString  e.g. "2024-05-20T12:00:00.000+00:00"
  * @returns {string}
  */
-function formatDate(timestamp) {
-  if (!timestamp) return "N/A";
-  const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp);
-  return date.toLocaleDateString("en-IN", {
+function formatDate(isoString) {
+  if (!isoString) return "N/A";
+  return new Date(isoString).toLocaleDateString("en-IN", {
     day: "2-digit",
     month: "short",
     year: "numeric"
@@ -89,7 +98,7 @@ function formatDate(timestamp) {
 }
 
 /**
- * Show a small toast-style notification on screen.
+ * Show a toast notification at the bottom of the screen.
  * @param {string} message
  * @param {"success"|"error"} type
  */
@@ -112,56 +121,160 @@ function showToast(message, type = "success") {
   setTimeout(() => toast.remove(), 3000);
 }
 
-// ── 4. PRODUCT CRUD ──────────────────────────────────────────
+// ── 4. AUTH FUNCTIONS ────────────────────────────────────────
 
 /**
- * Fetch all products ordered by newest first.
- * @returns {Promise<Array<{id:string, name:string, price:number, createdAt:Timestamp}>>}
+ * Sign up a new shopkeeper.
+ * 1. Checks shopName uniqueness in the database.
+ * 2. Creates an Appwrite Auth account.
+ * 3. Creates a session (logs the user in).
+ * 4. Saves the shop profile document in the database.
+ *
+ * @param {string} email
+ * @param {string} password
+ * @param {string} shopName  Unique slug, e.g. "rahulstore"
+ * @param {string} whatsappNumber  Digits only, e.g. "919876543210"
+ * @returns {Promise<object>} Appwrite user object
  */
-async function getProducts() {
-  const snap = await db.collection("products").orderBy("createdAt", "desc").get();
-  return snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-}
+async function signUpUser(email, password, shopName, whatsappNumber) {
+  // Check if the shopName slug is already taken
+  const existing = await databases.listDocuments(DATABASE_ID, COLLECTION_SHOPS, [
+    Query.equal("shopName", shopName),
+    Query.limit(1)
+  ]);
+  if (existing.total > 0) {
+    throw new Error("shop-name-taken");
+  }
 
-/**
- * Add a new product to Firestore.
- * @param {string} name
- * @param {number|string} price
- * @returns {Promise<firebase.firestore.DocumentReference>}
- */
-async function addProduct(name, price) {
-  return db.collection("products").add({
-    name: name.trim(),
-    price: parseFloat(price),
-    createdAt: firebase.firestore.FieldValue.serverTimestamp()
+  // Create the Appwrite Auth account (user.$id is the unique user identifier)
+  const user = await account.create(ID.unique(), email, password, shopName);
+
+  // Log the user in immediately so subsequent database writes are authenticated
+  await account.createEmailPasswordSession(email, password);
+
+  // Save the shop profile; use user.$id as the document ID for easy lookup later
+  await databases.createDocument(DATABASE_ID, COLLECTION_SHOPS, user.$id, {
+    userId: user.$id,
+    shopName,
+    whatsappNumber: whatsappNumber.trim()
   });
+
+  return user;
 }
 
 /**
- * Update an existing product by document ID.
- * @param {string} id  Firestore document ID
+ * Sign in a shopkeeper with email and password.
+ * @param {string} email
+ * @param {string} password
+ * @returns {Promise<object>} Appwrite session object
+ */
+async function loginUser(email, password) {
+  return account.createEmailPasswordSession(email, password);
+}
+
+/**
+ * Sign out the current user by deleting their active session.
+ * @returns {Promise<void>}
+ */
+async function logoutUser() {
+  return account.deleteSession("current");
+}
+
+/**
+ * Get the currently logged-in user.
+ * Throws an AppwriteException (code 401) if no session exists.
+ * @returns {Promise<object>} Appwrite user object
+ */
+async function getCurrentUser() {
+  return account.get();
+}
+
+/**
+ * Fetch a shop profile document by user ID.
+ * Document ID equals user.$id (set during signUpUser).
+ * @param {string} uid  Appwrite user.$id
+ * @returns {Promise<object|null>}
+ */
+async function getShopByUserId(uid) {
+  try {
+    return await databases.getDocument(DATABASE_ID, COLLECTION_SHOPS, uid);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Fetch a shop profile document by shopName slug (used on the public page).
+ * @param {string} shopName
+ * @returns {Promise<object|null>}
+ */
+async function getShopByName(shopName) {
+  const result = await databases.listDocuments(DATABASE_ID, COLLECTION_SHOPS, [
+    Query.equal("shopName", shopName),
+    Query.limit(1)
+  ]);
+  return result.total > 0 ? result.documents[0] : null;
+}
+
+// ── 5. PRODUCT CRUD (shopId-scoped) ──────────────────────────
+
+/**
+ * Fetch all products for a shop, newest first.
+ * Uses Appwrite's built-in $createdAt field for ordering.
+ * @param {string} shopId  The shop's unique shopName slug
+ * @returns {Promise<object[]>}
+ */
+async function getProducts(shopId) {
+  const result = await databases.listDocuments(DATABASE_ID, COLLECTION_PRODUCTS, [
+    Query.equal("shopId", shopId),
+    Query.orderDesc("$createdAt")
+  ]);
+  return result.documents;
+}
+
+/**
+ * Add a new product for a shop.
+ * @param {string} shopId
  * @param {string} name
  * @param {number|string} price
+ * @returns {Promise<object>}
  */
-async function updateProduct(id, name, price) {
-  return db.collection("products").doc(id).update({
+async function addProduct(shopId, name, price) {
+  return databases.createDocument(DATABASE_ID, COLLECTION_PRODUCTS, ID.unique(), {
+    shopId,
     name: name.trim(),
     price: parseFloat(price)
   });
 }
 
 /**
- * Delete a product by document ID.
- * @param {string} id
+ * Update an existing product document.
+ * @param {string} id  Appwrite document $id
+ * @param {string} name
+ * @param {number|string} price
+ * @returns {Promise<object>}
  */
-async function deleteProduct(id) {
-  return db.collection("products").doc(id).delete();
+async function updateProduct(id, name, price) {
+  return databases.updateDocument(DATABASE_ID, COLLECTION_PRODUCTS, id, {
+    name: name.trim(),
+    price: parseFloat(price)
+  });
 }
 
-// ── 5. ORDER CRUD ────────────────────────────────────────────
+/**
+ * Delete a product document.
+ * @param {string} id  Appwrite document $id
+ * @returns {Promise<void>}
+ */
+async function deleteProduct(id) {
+  return databases.deleteDocument(DATABASE_ID, COLLECTION_PRODUCTS, id);
+}
+
+// ── 6. ORDER CRUD (shopId-scoped) ────────────────────────────
 
 /**
- * Save a new order to Firestore.
+ * Save a new customer order for a shop.
+ * @param {string} shopId
  * @param {string} productName
  * @param {number} price  Unit price
  * @param {number|string} quantity
@@ -169,73 +282,95 @@ async function deleteProduct(id) {
  * @param {string} otp
  * @returns {Promise<number>} totalPrice
  */
-async function saveOrder(productName, price, quantity, customerName, otp) {
-  const qty = parseInt(quantity, 10);
+async function saveOrder(shopId, productName, price, quantity, customerName, otp) {
+  const qty        = parseInt(quantity, 10);
   const totalPrice = parseFloat(price) * qty;
-  await db.collection("orders").add({
+  await databases.createDocument(DATABASE_ID, COLLECTION_ORDERS, ID.unique(), {
+    shopId,
     productName,
     price: parseFloat(price),
     quantity: qty,
     totalPrice,
     customerName: customerName.trim(),
-    otp,
-    createdAt: firebase.firestore.FieldValue.serverTimestamp()
+    otp
   });
   return totalPrice;
 }
 
-// ── 6. EXPENSE & PROFIT ──────────────────────────────────────
+/**
+ * Fetch recent orders for a shop, newest first.
+ * @param {string} shopId
+ * @param {number} [limitCount=50]
+ * @returns {Promise<object[]>}
+ */
+async function getOrders(shopId, limitCount = 50) {
+  const result = await databases.listDocuments(DATABASE_ID, COLLECTION_ORDERS, [
+    Query.equal("shopId", shopId),
+    Query.orderDesc("$createdAt"),
+    Query.limit(limitCount)
+  ]);
+  return result.documents;
+}
+
+// ── 7. EXPENSE & PROFIT (shopId-scoped) ──────────────────────
 
 /**
- * Add a daily expense record.
+ * Record a daily expense for a shop.
+ * @param {string} shopId
  * @param {number|string} amount
  * @param {string} date  e.g. "2024-05-20"
+ * @returns {Promise<object>}
  */
-async function addExpense(amount, date) {
-  return db.collection("expenses").add({
+async function addExpense(shopId, amount, date) {
+  return databases.createDocument(DATABASE_ID, COLLECTION_EXPENSES, ID.unique(), {
+    shopId,
     amount: parseFloat(amount),
-    date,
-    createdAt: firebase.firestore.FieldValue.serverTimestamp()
+    date
   });
 }
 
 /**
- * Sum all order totalPrices (total revenue).
+ * Calculate total revenue for a shop (sum of all order totalPrices).
+ * Appwrite's max listDocuments limit is 5000 per request.
+ * WARNING: Shops with more than 5000 orders will receive an incomplete total.
+ * For high-volume shops, replace with a paginated sum or a server-side function.
+ * @param {string} shopId
  * @returns {Promise<number>}
  */
-async function getTotalRevenue() {
-  const snap = await db.collection("orders").get();
-  let total = 0;
-  snap.forEach(doc => { total += doc.data().totalPrice || 0; });
-  return total;
+async function getTotalRevenue(shopId) {
+  const result = await databases.listDocuments(DATABASE_ID, COLLECTION_ORDERS, [
+    Query.equal("shopId", shopId),
+    Query.limit(5000)
+  ]);
+  return result.documents.reduce((sum, doc) => sum + (doc.totalPrice || 0), 0);
 }
 
 /**
- * Sum all expense amounts.
+ * Calculate total expenses for a shop.
+ * WARNING: Shops with more than 5000 expense records will receive an incomplete total.
+ * For high-volume shops, replace with a paginated sum or a server-side function.
+ * @param {string} shopId
  * @returns {Promise<number>}
  */
-async function getTotalExpenses() {
-  const snap = await db.collection("expenses").get();
-  let total = 0;
-  snap.forEach(doc => { total += doc.data().amount || 0; });
-  return total;
+async function getTotalExpenses(shopId) {
+  const result = await databases.listDocuments(DATABASE_ID, COLLECTION_EXPENSES, [
+    Query.equal("shopId", shopId),
+    Query.limit(5000)
+  ]);
+  return result.documents.reduce((sum, doc) => sum + (doc.amount || 0), 0);
 }
 
-// ── 7. BONUS: Auto-delete orders older than 30 days ──────────
-// Uncomment and call this function from admin.html to clean up old orders.
-// For production, use Firebase Cloud Functions + a scheduled trigger instead.
-/*
-async function deleteOldOrders() {
-  const thirtyDaysAgo = new Date();
-  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-
-  const oldOrders = await db.collection("orders")
-    .where("createdAt", "<", thirtyDaysAgo)
-    .get();
-
-  const batch = db.batch();
-  oldOrders.forEach(doc => batch.delete(doc.ref));
-  await batch.commit();
-  console.log(`Deleted ${oldOrders.size} orders older than 30 days.`);
+/**
+ * Fetch recent expense records for a shop.
+ * @param {string} shopId
+ * @param {number} [limitCount=20]
+ * @returns {Promise<object[]>}
+ */
+async function getExpenses(shopId, limitCount = 20) {
+  const result = await databases.listDocuments(DATABASE_ID, COLLECTION_EXPENSES, [
+    Query.equal("shopId", shopId),
+    Query.orderDesc("$createdAt"),
+    Query.limit(limitCount)
+  ]);
+  return result.documents;
 }
-*/
